@@ -11,6 +11,7 @@ const LEVEL_META = {
 let navScrollRafId = null;
 let navFrameBound = false;
 let navDragBound = false;
+let navLiquidRebuildTimerId = null;
 const AVATAR_MORPH_MS = 920;
 const SIDEBAR_SITE_LABELS = ["HIGHERIDEAL", "HigherIdeal", "HIGHER__IDEAL", "더높은이상을향해"];
 const SIDEBAR_TYPING_HOLD_MS = 10000;
@@ -30,6 +31,23 @@ const NAV_CONTENT_ORDER = [
   { id: "cv", label: "CV" },
 ];
 const NAV_INITIAL_Y_NUDGE = -8;
+const NAV_LIQUID_FILTER_ID = "top-nav-liquid-filter";
+const NAV_LIQUID_DEFS_ID = "top-nav-liquid-defs";
+const NAV_LIQUID_SETTINGS = {
+  glassThickness: 140,
+  bezelWidth: 40,
+  refractiveIndex: 1.6,
+  scaleRatio: 1.0,
+  blurAmount: 1.0,
+  specularOpacity: 0.55,
+  specularSaturation: 7,
+  shadowColor: "rgba(255, 255, 255, 0.45)",
+  shadowBlur: 0,
+  shadowSpread: -5,
+  tintColor: "255, 255, 255",
+  tintOpacity: 0.0,
+  outerShadowBlur: 0,
+};
 
 if ("scrollRestoration" in history) {
   history.scrollRestoration = "manual";
@@ -211,6 +229,271 @@ function resetInitialViewport() {
   }, 90);
   viewportResetTimeoutIds.add(timeout0);
   viewportResetTimeoutIds.add(timeout90);
+}
+
+function navLiquidSurfaceConvexSquircle(x) {
+  return Math.pow(1 - Math.pow(1 - x, 4), 0.25);
+}
+
+function calculateNavLiquidRefractionProfile(glassThickness, bezelWidth, heightFn, ior, samples = 128) {
+  const eta = 1 / ior;
+
+  function refract(nx, ny) {
+    const dot = ny;
+    const k = 1 - eta * eta * (1 - dot * dot);
+    if (k < 0) return null;
+    const sq = Math.sqrt(k);
+    return [-(eta * dot + sq) * nx, eta - (eta * dot + sq) * ny];
+  }
+
+  const profile = new Float64Array(samples);
+  for (let i = 0; i < samples; i++) {
+    const x = i / samples;
+    const y = heightFn(x);
+    const dx = x < 1 ? 0.0001 : -0.0001;
+    const y2 = heightFn(x + dx);
+    const deriv = (y2 - y) / dx;
+    const mag = Math.sqrt(deriv * deriv + 1);
+    const ref = refract(-deriv / mag, -1 / mag);
+    if (!ref) {
+      profile[i] = 0;
+      continue;
+    }
+    profile[i] = ref[0] * ((y * bezelWidth + glassThickness) / ref[1]);
+  }
+  return profile;
+}
+
+function navSdRoundedRect(px, py, halfW, halfH, radius) {
+  const qx = Math.abs(px) - halfW + radius;
+  const qy = Math.abs(py) - halfH + radius;
+  const mx = Math.max(qx, 0);
+  const my = Math.max(qy, 0);
+  return Math.min(Math.max(qx, qy), 0) + Math.hypot(mx, my) - radius;
+}
+
+function generateNavLiquidDisplacementMap(width, height, radius, bezelWidth, profile, maxDisp) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  const img = ctx.createImageData(width, height);
+  const data = img.data;
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = 128;
+    data[i + 1] = 128;
+    data[i + 2] = 0;
+    data[i + 3] = 255;
+  }
+
+  const halfW = width / 2;
+  const halfH = height / 2;
+  const samples = profile.length;
+  const edgeSpan = Math.max(1, bezelWidth);
+  const eps = 0.7;
+
+  for (let py = 0; py < height; py++) {
+    for (let px = 0; px < width; px++) {
+      const x = px + 0.5 - halfW;
+      const y = py + 0.5 - halfH;
+      const sd = navSdRoundedRect(x, y, halfW, halfH, radius);
+      if (sd > 1.2) continue;
+
+      const distFromEdge = Math.max(0, -sd);
+      const t = Math.min(1, distFromEdge / edgeSpan);
+      const idxProfile = Math.min(Math.floor(t * (samples - 1)), samples - 1);
+      const disp = profile[idxProfile] || 0;
+      if (Math.abs(disp) < 1e-6) continue;
+
+      let gx = navSdRoundedRect(x + eps, y, halfW, halfH, radius) - sd;
+      let gy = navSdRoundedRect(x, y + eps, halfW, halfH, radius) - sd;
+      let gm = Math.hypot(gx, gy);
+      if (gm < 1e-5) {
+        const dxSide = halfW - Math.abs(x);
+        const dySide = halfH - Math.abs(y);
+        if (dxSide <= dySide) {
+          gx = x >= 0 ? 1 : -1;
+          gy = 0;
+        } else {
+          gx = 0;
+          gy = y >= 0 ? 1 : -1;
+        }
+        gm = 1;
+      }
+
+      const nx = gx / gm;
+      const ny = gy / gm;
+      const dX = (-nx * disp) / maxDisp;
+      const dY = (-ny * disp) / maxDisp;
+      const op = sd > 0 ? Math.max(0, 1 - sd) : 1;
+
+      const idx = (py * width + px) * 4;
+      data[idx] = (128 + dX * 127 * op + 0.5) | 0;
+      data[idx + 1] = (128 + dY * 127 * op + 0.5) | 0;
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL();
+}
+
+function generateNavLiquidSpecularMap(width, height, radius, bezelWidth, angle = Math.PI / 3) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  const img = ctx.createImageData(width, height);
+  const data = img.data;
+  data.fill(0);
+
+  const r = radius;
+  const rSq = r * r;
+  const r1Sq = (r + 1) ** 2;
+  const rBSq = Math.max(r - bezelWidth, 0) ** 2;
+  const wBody = width - r * 2;
+  const hBody = height - r * 2;
+  const lightVec = [Math.cos(angle), Math.sin(angle)];
+
+  for (let py = 0; py < height; py++) {
+    for (let px = 0; px < width; px++) {
+      const x = px < r ? px - r : px >= width - r ? px - r - wBody : 0;
+      const y = py < r ? py - r : py >= height - r ? py - r - hBody : 0;
+      const dSq = x * x + y * y;
+      if (dSq > r1Sq || dSq < rBSq) continue;
+
+      const dist = Math.sqrt(dSq);
+      const fromSide = r - dist;
+      const op = dSq < rSq ? 1 : 1 - (dist - Math.sqrt(rSq)) / (Math.sqrt(r1Sq) - Math.sqrt(rSq));
+      if (op <= 0 || dist === 0) continue;
+
+      const cos = x / dist;
+      const sin = -y / dist;
+      const dot = Math.abs(cos * lightVec[0] + sin * lightVec[1]);
+      const edge = Math.sqrt(Math.max(0, 1 - (1 - fromSide) ** 2));
+      const coeff = dot * edge;
+      const col = (255 * coeff) | 0;
+      const alpha = (col * coeff * op) | 0;
+      const idx = (py * width + px) * 4;
+      data[idx] = col;
+      data[idx + 1] = col;
+      data[idx + 2] = col;
+      data[idx + 3] = alpha;
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL();
+}
+
+function ensureNavigatorLiquidDefs() {
+  let svg = qs("#top-nav-liquid-svg");
+  if (!svg) {
+    svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("id", "top-nav-liquid-svg");
+    svg.setAttribute("width", "0");
+    svg.setAttribute("height", "0");
+    svg.setAttribute("color-interpolation-filters", "sRGB");
+    svg.style.position = "absolute";
+    svg.style.overflow = "hidden";
+    svg.style.pointerEvents = "none";
+    document.body.appendChild(svg);
+  }
+
+  let defs = qs(`#${NAV_LIQUID_DEFS_ID}`, svg);
+  if (!defs) {
+    defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    defs.setAttribute("id", NAV_LIQUID_DEFS_ID);
+    svg.appendChild(defs);
+  }
+  return defs;
+}
+
+function rebuildNavigatorLiquidFilter() {
+  const nav = qs(".top-nav-wrap");
+  const liquid = nav ? qs(".top-nav-liquid", nav) : null;
+  if (!nav || !liquid) return;
+
+  const width = Math.max(2, Math.round(liquid.offsetWidth));
+  const height = Math.max(2, Math.round(liquid.offsetHeight));
+  if (width < 2 || height < 2) return;
+
+  const computed = window.getComputedStyle(liquid);
+  const rawRadius = Math.max(2, Math.round(Number.parseFloat(computed.borderTopLeftRadius) || 18));
+  const maxRadius = Math.max(2, Math.floor(Math.min(width, height) / 2) - 1);
+  const radius = Math.min(rawRadius, maxRadius);
+  if (Math.abs(rawRadius - radius) > 0.5) {
+    nav.style.borderRadius = `${radius}px`;
+  }
+  const clampedBezel = Math.min(
+    NAV_LIQUID_SETTINGS.bezelWidth,
+    Math.max(1, radius - 1),
+    Math.max(1, Math.min(width, height) / 2 - 1),
+  );
+  if (!(clampedBezel > 0)) return;
+
+  const thinBoost = Math.max(1, Math.min(2.4, 96 / Math.max(height, 1)));
+  const adaptiveBezel = Math.min(Math.max(1, clampedBezel * thinBoost), Math.max(1, Math.min(width, height) / 2 - 1));
+  const adaptiveThickness = NAV_LIQUID_SETTINGS.glassThickness * Math.max(1, 0.6 * thinBoost);
+  const adaptiveScaleRatio = NAV_LIQUID_SETTINGS.scaleRatio * Math.max(1.3, thinBoost * 1.1);
+  const adaptiveBlur = Math.max(NAV_LIQUID_SETTINGS.blurAmount, 0.6);
+  const adaptiveSpecSat = Math.max(1, NAV_LIQUID_SETTINGS.specularSaturation);
+
+  const profile = calculateNavLiquidRefractionProfile(
+    adaptiveThickness,
+    adaptiveBezel,
+    navLiquidSurfaceConvexSquircle,
+    NAV_LIQUID_SETTINGS.refractiveIndex,
+    128,
+  );
+  const maxDisp = Math.max(...Array.from(profile).map((v) => Math.abs(v))) || 1;
+  const dispUrl = generateNavLiquidDisplacementMap(width, height, radius, adaptiveBezel, profile, maxDisp);
+  const specUrl = generateNavLiquidSpecularMap(width, height, radius, adaptiveBezel * 2.5);
+  const scale = maxDisp * adaptiveScaleRatio;
+  const defs = ensureNavigatorLiquidDefs();
+  if (!defs) return;
+
+  defs.innerHTML = `
+    <filter id="${NAV_LIQUID_FILTER_ID}" x="0%" y="0%" width="100%" height="100%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="${adaptiveBlur}" result="blurred_source" />
+      <feImage href="${dispUrl}" x="0" y="0" width="${width}" height="${height}" result="disp_map" />
+      <feDisplacementMap in="blurred_source" in2="disp_map"
+        scale="${scale}" xChannelSelector="R" yChannelSelector="G"
+        result="displaced" />
+      <feColorMatrix in="displaced" type="saturate" values="${adaptiveSpecSat}" result="displaced_sat" />
+      <feImage href="${specUrl}" x="0" y="0" width="${width}" height="${height}" result="spec_layer" />
+      <feComposite in="displaced_sat" in2="spec_layer" operator="in" result="spec_masked" />
+      <feComponentTransfer in="spec_layer" result="spec_faded">
+        <feFuncA type="linear" slope="${NAV_LIQUID_SETTINGS.specularOpacity}" />
+      </feComponentTransfer>
+      <feBlend in="spec_masked" in2="displaced" mode="normal" result="with_sat" />
+      <feBlend in="spec_faded" in2="with_sat" mode="normal" />
+    </filter>
+  `;
+
+  const effectiveShadowBlur = Math.max(0, Number(NAV_LIQUID_SETTINGS.shadowBlur) || 0);
+  const effectiveShadowColor = effectiveShadowBlur > 0 ? NAV_LIQUID_SETTINGS.shadowColor : "rgba(255, 255, 255, 0)";
+  const effectiveShadowSpread = effectiveShadowBlur > 0 ? NAV_LIQUID_SETTINGS.shadowSpread : 0;
+  liquid.style.setProperty("--nav-liquid-shadow-color", effectiveShadowColor);
+  liquid.style.setProperty("--nav-liquid-shadow-blur", `${effectiveShadowBlur}px`);
+  liquid.style.setProperty("--nav-liquid-shadow-spread", `${effectiveShadowSpread}px`);
+  liquid.style.setProperty("--nav-liquid-tint-color", NAV_LIQUID_SETTINGS.tintColor);
+  liquid.style.setProperty("--nav-liquid-tint-opacity", String(NAV_LIQUID_SETTINGS.tintOpacity));
+  liquid.style.setProperty("--nav-liquid-outer-shadow-blur", `${NAV_LIQUID_SETTINGS.outerShadowBlur}px`);
+  liquid.style.setProperty("--nav-liquid-boost", thinBoost.toFixed(3));
+}
+
+function scheduleNavigatorLiquidFilterRebuild(delay = 24) {
+  if (navLiquidRebuildTimerId) {
+    clearTimeout(navLiquidRebuildTimerId);
+  }
+  navLiquidRebuildTimerId = window.setTimeout(() => {
+    navLiquidRebuildTimerId = null;
+    requestAnimationFrame(rebuildNavigatorLiquidFilter);
+  }, delay);
 }
 
 function applyFonts(doc = {}) {
@@ -492,11 +775,12 @@ function ensureNavigatorSection() {
         align-items: center;
         width: fit-content;
         max-width: min(96vw, 1200px);
-        background: rgba(255, 255, 255, 0.88);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        backdrop-filter: blur(6px);
+        border: 0;
+        border-radius: 75px;
         padding: 13px 12px;
+        background: transparent;
+        isolation: isolate;
+        overflow: hidden;
         cursor: grab;
         touch-action: none;
         user-select: none;
@@ -505,8 +789,48 @@ function ensureNavigatorSection() {
       .top-nav-wrap * {
         -webkit-user-drag: none;
       }
+      .top-nav-liquid {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        touch-action: none;
+        isolation: isolate;
+        background-color: rgba(255, 255, 255, 0.01);
+        box-shadow: 0 4px var(--nav-liquid-outer-shadow-blur, 24px) rgba(0, 0, 0, 0.18);
+      }
+      .top-nav-liquid::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        border-radius: inherit;
+        border: 1px solid rgba(255, 255, 255, 0.34);
+        box-shadow: inset 0 0 var(--nav-liquid-shadow-blur, 20px) var(--nav-liquid-shadow-spread, -5px)
+          var(--nav-liquid-shadow-color, rgba(255, 255, 255, 0.45));
+        background-color: rgba(var(--nav-liquid-tint-color, 255, 255, 255), var(--nav-liquid-tint-opacity, 0.06));
+        pointer-events: none;
+      }
+      .top-nav-liquid::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        border-radius: inherit;
+        backdrop-filter: blur(0.85px) saturate(1.08);
+        -webkit-backdrop-filter: blur(0.85px) saturate(1.08);
+        backdrop-filter: url(#top-nav-liquid-filter);
+        -webkit-backdrop-filter: url(#top-nav-liquid-filter);
+        isolation: isolate;
+        background: rgba(255, 255, 255, 0.01);
+        pointer-events: none;
+      }
       .top-nav-wrap.is-dragging {
         cursor: grabbing;
+      }
+      .top-nav-wrap.is-dragging .top-nav-liquid {
+        box-shadow: 0 6px calc(var(--nav-liquid-outer-shadow-blur, 24px) + 6px) rgba(0, 0, 0, 0.21);
       }
       .top-nav-list {
         margin: 0;
@@ -517,6 +841,8 @@ function ensureNavigatorSection() {
         gap: 7px;
         justify-content: center;
         align-items: center;
+        position: relative;
+        z-index: 2;
       }
       .top-nav-link {
         display: inline-flex;
@@ -524,11 +850,12 @@ function ensureNavigatorSection() {
         gap: 6px;
         text-decoration: none;
         color: var(--text);
-        border: 1px solid var(--border);
+        border: 1px solid rgba(197, 204, 217, 0.82);
         border-radius: 999px;
-        background: var(--white);
+        background: rgba(255, 255, 255, 0.62);
         padding: 6px 10px;
         font-size: 11px;
+        font-weight: 500;
         line-height: 1.2;
         transition: background 0.18s, color 0.18s, border-color 0.18s;
         user-select: none;
@@ -798,6 +1125,7 @@ function syncNavigatorFrame() {
 
   clampNavigatorToViewport(nav);
   updateScrollTailAllowance();
+  scheduleNavigatorLiquidFilterRebuild(0);
 }
 
 function bindNavigatorFrameSync() {
@@ -895,6 +1223,7 @@ function bindNavigatorDrag() {
 
   let dragStarted = false;
   let pointerStartedOnLink = false;
+  let pointerCaptureEl = null;
   let suppressClick = false;
   let pointerId = null;
   let startX = 0;
@@ -904,12 +1233,13 @@ function bindNavigatorDrag() {
   const dragThreshold = 7;
 
   const finishDrag = (didDrag = false) => {
-    if (pointerId !== null) {
+    if (pointerId !== null && pointerCaptureEl) {
       try {
-        nav.releasePointerCapture(pointerId);
+        pointerCaptureEl.releasePointerCapture(pointerId);
       } catch {}
     }
     pointerId = null;
+    pointerCaptureEl = null;
     dragStarted = false;
     pointerStartedOnLink = false;
     nav.classList.remove("is-dragging");
@@ -932,8 +1262,10 @@ function bindNavigatorDrag() {
 
   nav.addEventListener("pointerdown", (event) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
-    const downOnLink = Boolean(event.target && event.target.closest(".top-nav-link"));
+    const linkEl = event.target && event.target.closest(".top-nav-link");
+    const downOnLink = Boolean(linkEl);
     pointerStartedOnLink = downOnLink;
+    pointerCaptureEl = downOnLink ? linkEl : nav;
 
     const rect = nav.getBoundingClientRect();
     pointerId = event.pointerId;
@@ -944,7 +1276,7 @@ function bindNavigatorDrag() {
     dragStarted = false;
     suppressClick = false;
     try {
-      nav.setPointerCapture(pointerId);
+      pointerCaptureEl.setPointerCapture(pointerId);
     } catch {}
     if (!downOnLink) {
       event.preventDefault();
@@ -1041,7 +1373,6 @@ function bindNavigatorActiveState() {
       const isActive = key === id;
       link.style.background = isActive ? "var(--accent-lt)" : "";
       link.style.color = isActive ? "var(--accent)" : "";
-      link.style.fontWeight = isActive ? "500" : "";
     });
   }
 
@@ -1112,7 +1443,6 @@ function animateScrollTo(targetY, duration = 560) {
 function bindNavigatorSmoothScroll() {
   const links = qsa(".top-nav-link");
   if (links.length === 0) return;
-  const dragThreshold = 2;
 
   const hasRecentNavDrag = () => {
     const nav = qs(".top-nav-wrap");
@@ -1152,46 +1482,8 @@ function bindNavigatorSmoothScroll() {
     link.dataset.smoothBound = "1";
     link.setAttribute("draggable", "false");
 
-    let pointerStart = null;
-
-    link.addEventListener("pointerdown", (event) => {
-      if (event.pointerType === "mouse" && event.button !== 0) return;
-      pointerStart = {
-        id: event.pointerId,
-        x: event.clientX,
-        y: event.clientY,
-      };
-    });
-
-    link.addEventListener("pointercancel", () => {
-      pointerStart = null;
-    });
-
-    link.addEventListener("pointerup", (event) => {
-      if (!pointerStart || pointerStart.id !== event.pointerId) return;
-      const move = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
-      pointerStart = null;
-      const nav = qs(".top-nav-wrap");
-      const navDraggingNow = Boolean(nav && nav.classList.contains("is-dragging"));
-      if (navDraggingNow) return;
-      if (move > dragThreshold || hasRecentNavDrag()) return;
-
-      const href = link.getAttribute("href") || "";
-      const moved = navigateToHref(href);
-      if (!moved) return;
-
-      event.preventDefault();
-      link.dataset.navPointerTs = String(Date.now());
-    });
-
     link.addEventListener("click", (event) => {
       if (hasRecentNavDrag()) {
-        event.preventDefault();
-        return;
-      }
-
-      const lastPointerTs = Number.parseInt(link.dataset.navPointerTs || "0", 10);
-      if (lastPointerTs && Date.now() - lastPointerTs < 360) {
         event.preventDefault();
         return;
       }
@@ -1215,6 +1507,7 @@ function renderNavigator(orderedSections = []) {
   if (navItems.length <= 1) return;
 
   navSection.innerHTML = `
+    <div class="top-nav-liquid" aria-hidden="true"></div>
     <ul class="top-nav-list">
       ${navItems
         .map(
@@ -1235,6 +1528,8 @@ function renderNavigator(orderedSections = []) {
   bindNavigatorDrag();
   syncNavigatorFrame();
   requestAnimationFrame(syncNavigatorFrame);
+  setTimeout(() => scheduleNavigatorLiquidFilterRebuild(0), 80);
+  setTimeout(() => scheduleNavigatorLiquidFilterRebuild(0), 260);
   setTimeout(updateScrollTailAllowance, 0);
   bindNavigatorSmoothScroll();
   bindNavigatorActiveState();
