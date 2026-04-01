@@ -1,0 +1,689 @@
+# ================================================================
+#  PERSONAL PORTFOLIO — DATA DOCUMENT
+#  이 파일을 채워주세요. 완료 후 터미널에서 실행:
+#    python generate.py
+#  → index.html 이 생성됩니다.
+#
+#  [필수] 항목은 반드시 입력하세요.
+#  선택 항목은 빈칸("")으로 두면 웹페이지에 표시되지 않습니다.
+#  # 로 시작하는 줄은 주석으로 무시됩니다.
+# ================================================================
+
+
+# ── 기본 정보 ─────────────────────────────────────────────────
+fonts:
+  korean: "Pretendard"
+  english_body: "IBM Plex Sans"
+  english_heading: "Lora"
+  english_mono: "IBM Plex Mono"
+
+# Left sidebar profile (optional): if empty, falls back to personal.*
+sidebar_profile:
+  name: "Jung-Woo Kim"
+  title: "AI & NPU Engineer"
+  photo: "assets/bio/photo.png"
+  photo_life: "assets/bio/life.jpg"
+
+personal:
+  name_ko:    "Jung-Woo Kim"                       # [필수] 한국어 이름//
+  name_en:    "Jung-Woo Kim"                # [필수] 영문 이름
+  title:      "AI & NPU Engineer"            # [필수] 직함/직위
+  # 예: "Ph.D. Student" / "Research Engineer" / "M.S. Student" / "Researcher"
+
+  affiliation: "KwangWoon University"                     # [필수] 소속 기관 (짧게, 로고 옆에 표시)
+  department:  "Electronic Materials Engineering"
+  location:    "Seoul, Republic of Korea"
+
+  # 사진 (3:4 비율 증명사진 권장)
+  # assets/photo.jpg 에 파일 저장 후 경로 그대로 사용
+  photo: "assets/bio/photo.png"
+
+  # ── 연락처
+  email:  "jwkim99@kw.ac.kr"           # [필수]
+  phone:  ""                               # 예: "+82-10-1234-5678" (선택)
+
+  # ── 외부 링크 (없으면 "" 로 비워두세요)
+  linkedin:       "https://www.linkedin.com/in/%EC%A0%95%EC%9A%B0-%EA%B9%80-9a66072b9/"   # https://linkedin.com/in/yourname
+  github:         "https://github.com/HigherIdeal"   # https://github.com/yourname
+  google_scholar: "https://scholar.google.com/citations?user=p_66Vq4AAAAJ&hl"   # https://scholar.google.com/citations?user=XXXXXX
+  orcid:          "https://orcid.org/0009-0003-0913-0709"   # https://orcid.org/0000-0000-0000-0000
+  cv:             ""   # assets/cv.pdf 또는 외부 URL (이력서 PDF)
+
+  # ── 자기소개 (영어 권장, 2~4문장)
+  # | 기호 뒤에서 줄바꿈하여 여러 줄 입력 가능
+  bio: |
+    I am a researcher with B.S. and M.S. degrees in Electronic Materials Engineering from Kwangwoon University. My research focuses on the efficient acceleration of AI models through hardware aware algorithms and NPU design, with applications to edge AI and large language models. I am broadly interested in model optimization and domain specific accelerator design.
+
+
+# ── 연구 관심 분야 ─────────────────────────────────────────────
+# 키워드 형식으로 나열 (화면에 태그로 표시)
+research_interests:
+  - "Deep Learning"
+  - "Computer Vision"
+  - "Edge AI / On-device Inference"
+  - "NPU Architecture"
+  # 원하는 만큼 추가하세요
+
+
+# ── 학력 ──────────────────────────────────────────────────────
+education:
+  - institution:      "KwangWoon University"
+    # institution_full: "Korea Advanced Institute of Science and Technology"
+    degree:    "B.S."         # Ph.D. / M.S. / B.S. / B.Eng. / Integrated M.S.-Ph.D.
+    major:     "Electronic Materials Engineering"
+    period_start: "2024-03"    # YYYY-MM
+    period_end:   "2026-02"    # YYYY-MM 또는 "present"
+    thesis_title: "High-Performance LPU Design based on Coarse-Fine LM Head Approximation"           # 학위논문 제목 (완료/예정 시 입력)
+    thesis_url:   ""           # 논문 URL
+    advisor:   "Prof. Young-Ho Seo"     # 지도교수
+    gpa:       "4.42"              # 예: "4.10"
+    gpa_scale: "4.5"           # 만점 기준 (예: "4.3" / "4.5")
+    description: ""            # 추가 설명 (장학금, 수료 정보 등)
+
+  - institution:      "KwangWoon University"
+    institution_full: "KwangWoon University"
+    degree:    "M.S."
+    major:     "Electronic Materials Engineering"
+    period_start: "2018-03"
+    period_end:   "2024-02"
+    thesis_title: ""
+    thesis_url:   ""
+    advisor:   "Prof. Young-Ho Seo"
+    gpa:       "4.1"
+    gpa_scale: "4.5"
+    description: ""
+
+
+# ── 논문 ──────────────────────────────────────────────────────
+# type 옵션:
+#   SCI / SCIE / KCI / International Conference / Domestic Conference / Preprint
+#
+# status 옵션:
+#   published      → 출판됨
+#   accepted       → 게재 확정 (온라인 출판 전)
+#   under_review   → 심사 중
+#   in_preparation → 준비 중 (제출 전)
+#
+# authors 표기:
+#   * 본인에 붙임 → 볼드+밑줄로 강조 표시
+#   † 공동 1저자  → †로 표시
+#   예) "Gildong Hong*, Second Author, Corresponding Author†"
+#
+# highlight: true → 상단 "Featured" 섹션에 먼저 표시
+
+# publications:
+
+#   - id: "paper1"
+#     type:   "SCI"
+#     status: "published"
+
+#     title:   "Your First SCI Paper Title Here"
+#     authors: "Gildong Hong*, Second Author, Third Author, Corresponding Author"
+
+#     # 저널 논문이면 journal 입력, 학회 논문이면 conference 입력
+#     journal:       "IEEE Transactions on Neural Networks and Learning Systems"
+#     journal_abbr:  "IEEE TNNLS"     # 배지에 표시되는 약자
+#     conference:    ""
+#     conference_abbr: ""
+
+#     year:   2024
+#     volume: "35"
+#     issue:  "1"
+#     pages:  "1–12"
+
+#     doi:    "10.1109/TNNLS.2024.XXXXXXX"  # DOI만 입력 (https://doi.org/ 제외)
+#     arxiv:  ""   # https://arxiv.org/abs/XXXX.XXXXX
+#     pdf:    ""   # 파일 경로(assets/papers/paper1.pdf) 또는 외부 URL
+#     code:   ""   # GitHub URL
+#     project_page: ""
+#     slides: ""
+#     video:  ""
+
+#     impact_factor: "10.4"   # 없으면 "" 로 비워두세요
+#     quartile: "Q1"           # Q1 / Q2 / Q3 / Q4 / ""
+
+#     # 대표 이미지: assets/papers/ 폴더에 저장 (권장: 16:9 또는 4:3 비율)
+#     image: "assets/papers/paper1.png"
+
+#     abstract: |
+#       Write your paper abstract here.
+#       You can copy and paste directly from the published paper.
+#       Multiple lines are supported.
+
+#     keywords:
+#       - "Deep Learning"
+#       - "Neural Network"
+#       - "Keyword3"
+
+#     # 특이사항 (예: "Best Paper Award" / "Oral Presentation" / "Cover Article")
+#     note: ""
+
+#     highlight: true   # true이면 Featured Publications에 먼저 표시
+
+
+#   - id: "paper2"
+#     type:   "SCIE"
+#     status: "under_review"
+#     title:   "Your Second Paper Currently Under Review"
+#     authors: "Gildong Hong*, Second Author, Third Author"
+#     journal:      "Nature Machine Intelligence"
+#     journal_abbr: "Nature MI"
+#     conference:   ""
+#     conference_abbr: ""
+#     year:   2024
+#     volume: ""
+#     issue:  ""
+#     pages:  ""
+#     doi:    ""
+#     arxiv:  ""
+#     pdf:    ""
+#     code:   ""
+#     project_page: ""
+#     slides: ""
+#     video:  ""
+#     impact_factor: ""
+#     quartile: "Q1"
+#     image: ""
+#     abstract: |
+#       Abstract text here.
+#     keywords:
+#       - "Keyword1"
+#     note: ""
+#     highlight: false
+
+
+#   - id: "paper3"
+#     type:   "International Conference"
+#     status: "published"
+#     title:   "Your Conference Paper Title"
+#     authors: "Gildong Hong*, Second Author, Third Author"
+#     journal:      ""
+#     journal_abbr: ""
+#     conference:      "IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+#     conference_abbr: "CVPR 2024"
+#     year:   2024
+#     volume: ""
+#     issue:  ""
+#     pages:  "1234–1243"
+#     doi:    ""
+#     arxiv:  ""
+#     pdf:    ""
+#     code:   ""
+#     project_page: ""
+#     slides: ""
+#     video:  ""
+#     impact_factor: ""
+#     quartile: ""
+#     image: "assets/papers/paper3.png"
+#     abstract: |
+#       Abstract of conference paper.
+#     keywords:
+#       - "Keyword1"
+#     note: "Oral Presentation"   # 구두발표, 포스터 등
+#     highlight: true
+
+
+#   - id: "paper4"
+#     type:   "KCI"
+#     status: "published"
+#     title:   "KCI 논문 제목을 여기에 입력"
+#     authors: "홍길동*, 공저자"
+#     journal:      "전자공학회논문지"
+#     journal_abbr: "IEEK"
+#     conference:   ""
+#     conference_abbr: ""
+#     year:   2023
+#     volume: "60"
+#     issue:  "3"
+#     pages:  "1–10"
+#     doi:    ""
+#     arxiv:  ""
+#     pdf:    ""
+#     code:   ""
+#     project_page: ""
+#     slides: ""
+#     video:  ""
+#     impact_factor: ""
+#     quartile: ""
+#     image: ""
+#     abstract: |
+#       논문 초록을 여기에 입력하세요.
+#     keywords:
+#       - "키워드1"
+#       - "키워드2"
+#     note: ""
+#     highlight: false
+
+publications:
+
+  - id: "paper_ur_1"
+    type: "SCI"
+    status: "under_review"
+
+    title: "Fast LM Head via Coarse-Fine Decomposition and Tile-Wise Weight Clustering"
+    authors: "Jung-Woo Kim, Seung-Hwan Yoon, Hye-Rin Lee, Hak-Bum Lee, Su-Min Oh, Seung-Yoon Kang, Young-Ho Seo"
+
+    journal: "IEEE Transactions on Computers"
+    journal_abbr: "IEEE TC"
+
+    year: 2026
+    quartile: "Q1"
+
+    keywords:
+      - "LLM"
+      - "LM Head"
+      - "NPU"
+      - "Model Compression"
+
+    note: "Under review"
+    highlight: true
+
+  - id: "paper_ur_2"
+    type: "SCI"
+    status: "under_review"
+
+    title: "3D Pose Estimation using Virtual Projection based on 3D Reconstructed Model"
+    authors: "Jung-Woo Kim, Sol Lee, Byung-Seo Park, Hak-Bum Lee, Dong-Ho Kang, Young-Ho Seo"
+
+    journal: "Sensors"
+    journal_abbr: "Sensors"
+
+    year: 2026
+    quartile: "Q1"
+
+    keywords:
+      - "3D Pose Estimation"
+      - "Virtual Projection"
+      - "3D Reconstruction"
+
+    note: "Under review"
+    highlight: true
+
+  - id: "paper_1"
+    type: "SCI"
+    status: "published"
+
+    title: "A new blendshape-based retargeting for 3D facial expression"
+    authors: "Sol Lee, Hak-Bum Lee, Ye-Won Jang, Jung-Woo Kim, Young-Ho Seo"
+
+    journal: "International Journal of Computers and Applications"
+    journal_abbr: "IJCA"
+
+    year: 2025
+    doi: "10.1080/1206212X.2025.2571553"
+
+    keywords:
+      - "3D Facial Expression"
+      - "Blendshape"
+      - "Retargeting"
+
+    highlight: true
+
+  - id: "paper_2"
+    type: "KCI"
+    status: "published"
+
+    title: "Efficient Matrix Transposition in LLM Accelerators via Direct Memory Access (DMA) Integration"
+    authors: "Jun-Ho Lee, Jun-Young An, Jung-Woo Kim, Young-Ho Seo"
+
+    journal: "Journal of Broadcast Engineering"
+    journal_abbr: "JBE"
+
+    year: 2025
+    doi: "10.5909/JBE.2025.30.6.989"
+
+    keywords:
+      - "LLM"
+      - "DMA"
+      - "Matrix Transposition"
+      - "Accelerator"
+
+    highlight: true
+
+  - id: "paper_3"
+    type: "SCI"
+    status: "published"
+
+    title: "High accurate SMPL-X generation based on volumetric reconstruction"
+    authors: "Jung-Woo Kim, Hak-Bum Lee, Seung-Hwan Yoon, Seung-Jun Yang, Gi-Mun Um, Young-Ho Seo"
+
+    journal: "Machine Vision and Applications"
+    journal_abbr: "MVA"
+
+    year: 2025
+    doi: "10.1007/s00138-025-01745-1"
+
+    keywords:
+      - "SMPL-X"
+      - "Volumetric Reconstruction"
+      - "3D Human Modeling"
+
+    highlight: true
+
+  - id: "paper_4"
+    type: "SCI"
+    status: "published"
+
+    title: "A new fixed-point simulation methodology for on-device AI based on large language models"
+    authors: "Jung-Woo Kim, Seung-Hwan Yoon, Dong-Kyeong Kang, Seong-Won Lim, Hak-Bum Lee, Su-Min Oh, Young-Ho Seo"
+
+    journal: "Journal of Systems Architecture"
+    journal_abbr: "JSA"
+
+    year: 2025
+    doi: "10.1016/j.sysarc.2025.103548"
+
+    keywords:
+      - "LLM"
+      - "Fixed-Point"
+      - "On-Device AI"
+      - "Quantization"
+
+    highlight: true
+
+  - id: "paper_5"
+    type: "SCI"
+    status: "published"
+
+    title: "High Accurate Coordinates Estimation of IR Markers Captured by Multiple Sensors"
+    authors: "Hak-Bum Lee, Jung-Woo Kim, Young-Ho Seo"
+
+    journal: "IEEE Sensors Journal"
+    journal_abbr: "IEEE Sensors J."
+
+    year: 2025
+    doi: "10.1109/JSEN.2025.3583466"
+
+    keywords:
+      - "IR Marker"
+      - "Multiple Sensors"
+      - "Coordinate Estimation"
+
+    highlight: true
+
+  - id: "paper_6"
+    type: "KCI"
+    status: "published"
+
+    title: "Modular FPGA Accelerator Design for Real-Time 3D Facial Generation"
+    authors: "Seung-Hwan Yoon, Su-Min Oh, Hak-Bum Lee, Jung-Woo Kim, Hye-Rin Lee, Young-Ho Seo"
+
+    journal: "Journal of Broadcast Engineering"
+    journal_abbr: "JBE"
+
+    year: 2025
+    doi: "10.5909/JBE.2025.30.2.170"
+
+    keywords:
+      - "FPGA"
+      - "Accelerator"
+      - "3D Facial Generation"
+      - "Real-Time"
+
+    highlight: true
+
+  - id: "paper_7"
+    type: "KCI"
+    status: "published"
+
+    title: "Impact of Data Compression on the Performance of View Synthesis Deep Learning Model"
+    authors: "Su-Min Oh, Seung-Hwan Yoon, Jung-Woo Kim, Hak-Bum Lee, Young-Ho Seo, Dong-Wook Kim"
+
+    journal: "Journal of Broadcast Engineering"
+    journal_abbr: "JBE"
+
+    year: 2025
+    doi: "10.5909/JBE.2025.30.2.238"
+
+    keywords:
+      - "Data Compression"
+      - "View Synthesis"
+      - "Deep Learning"
+
+    highlight: true
+
+  - id: "paper_8"
+    type: "SCI"
+    status: "published"
+
+    title: "Generative AI-driven Graphic Pipeline for Web-based Editing of 4D Volumetric Data"
+    authors: "Ye-Won Jang, Jung-Woo Kim, Hak-Bum Lee, Young-Ho Seo"
+
+    journal: "Journal of Web Engineering"
+    journal_abbr: "JWE"
+
+    year: 2025
+    doi: "10.13052/jwe1540-9589.2416"
+
+    keywords:
+      - "Generative AI"
+      - "Graphics Pipeline"
+      - "4D Volumetric Data"
+      - "Web-based Editing"
+
+    highlight: true
+
+  - id: "paper_9"
+    type: "KCI"
+    status: "published"
+
+    title: "Fixed-Point Arithmetic Analysis for Development of LLaMA 3 On-Device Accelerator"
+    authors: "Jung-Woo Kim, Seung-Hwan Yoon, Seong-Won Lim, Su-Min Oh, Hak-Bum Lee, Min-Ji Lee, Dong-Kyeong Kang, Young-Ho Seo"
+
+    journal: "Journal of Broadcast Engineering"
+    journal_abbr: "JBE"
+
+    year: 2024
+    doi: "10.5909/JBE.2024.29.4.498"
+
+    keywords:
+      - "LLaMA 3"
+      - "Fixed-Point Arithmetic"
+      - "On-Device Accelerator"
+      - "LLM"
+
+    highlight: true
+
+
+# ── 특허 ──────────────────────────────────────────────────────
+# type 옵션:
+#   domestic      → 국내 특허
+#   international → 해외 특허 (미국, 유럽 등)
+#   PCT           → PCT 국제 출원
+#
+# status 옵션:
+#   filed      → 출원
+#   pending    → 심사 중
+#   registered → 등록
+#   abandoned  → 포기/취하
+
+patents:
+
+  - type:   "domestic"
+    status: "registered"
+    title:    "특허 발명의 명칭 (한국어)"
+    title_en: "Patent Title in English"
+    inventors:
+      - "홍길동"
+      - "공동발명자1"
+    assignee: "KAIST"              # 특허권자 (출원인)
+    application_number:  "10-2023-XXXXXXX"
+    registration_number: "10-XXXXXXX"
+    filing_date:       "2023-01-15"   # YYYY-MM-DD
+    registration_date: "2024-03-20"   # YYYY-MM-DD (미등록이면 "")
+    country:  "대한민국"
+    ipc_code: "G06N 3/08"            # 국제특허분류 (없으면 "")
+    description: |
+      특허 내용에 대한 간단한 설명. 어떤 문제를 해결하는지,
+      핵심 기술 아이디어가 무엇인지 2~3문장으로 기술하세요.
+
+
+  - type:   "international"
+    status: "pending"
+    title:    "International Patent Application Title"
+    title_en: "International Patent Application Title"
+    inventors:
+      - "Gildong Hong"
+      - "Co-Inventor"
+    assignee: "KAIST"
+    application_number:  "PCT/KR2024/XXXXXX"
+    registration_number: ""
+    filing_date:       "2024-06-01"
+    registration_date: ""
+    country:  "PCT"
+    ipc_code: "G06N 3/04"
+    description: |
+      Brief description of the invention.
+
+
+# ── 경력 / 인턴십 ──────────────────────────────────────────────
+# type 옵션: industry / internship / research / academic
+
+experience:
+
+  - company:      "Company Name"
+    company_full: "Company Full Name Co., Ltd."
+    type:         "internship"
+    role:         "Research Intern"
+    department:   "AI Lab"             # 부서 (없으면 "")
+    period_start: "2023-06"
+    period_end:   "2023-08"
+    location:     "Seoul, South Korea"
+    description: |
+      Brief description of your role and main responsibilities.
+    highlights:
+      - "Developed a [model/system] achieving X% improvement over baseline"
+      - "Implemented [method] using Python/PyTorch, reducing inference latency by X%"
+      - "Collaborated with [team] on [project]"
+    tech_stack:
+      - "Python"
+      - "PyTorch"
+      - "CUDA"
+
+
+  - company:      "Research Lab / Professor"
+    company_full: ""
+    type:         "research"
+    role:         "Research Assistant"
+    department:   ""
+    period_start: "2020-03"
+    period_end:   "2021-02"
+    location:     "Seoul, South Korea"
+    description:  ""
+    highlights:
+      - "Achievement 1"
+      - "Achievement 2"
+    tech_stack:
+      - "Python"
+      - "MATLAB"
+
+
+# ── 프로젝트 ───────────────────────────────────────────────────
+# 연구/산학 프로젝트, 개인 프로젝트 등
+
+projects:
+
+  - title: "Project / Research Grant Title"
+    period_start: "2022-03"
+    period_end:   "2024-02"
+    role:    "주요 참여연구원"   # 역할: 연구책임자 / 참여연구원 / Lead Developer 등
+    funding: "NRF"              # 지원기관: NRF / IITP / ETRI / 산업부 / 자체 등 (없으면 "")
+    description: |
+      Project description: what it aimed to solve, the approach, and the outcome.
+    highlights:
+      - "Key result or achievement 1"
+      - "Key result or achievement 2"
+    tech_stack:
+      - "Python"
+      - "PyTorch"
+    link:   ""   # 프로젝트 페이지 URL
+    github: ""   # GitHub URL
+    image:  ""   # 대표 이미지 경로
+
+
+# ── 수상 및 장학금 ─────────────────────────────────────────────
+awards:
+
+  - title:        "Best Paper Award"
+    organization: "International Conference on ..."
+    year:         2024
+    description:  "Awarded for outstanding contribution in the area of ..."
+    prize:        ""   # 상금 (예: "1,000,000 KRW" / "$500")
+
+  - title:        "우수 대학원생 장학금"
+    organization: "KAIST"
+    year:         2022
+    description:  ""
+    prize:        ""
+
+
+# ── 기술 스택 ──────────────────────────────────────────────────
+# level 옵션: expert / advanced / intermediate / beginner / native
+
+skills:
+
+  - category: "Programming Languages"
+    items:
+      - { name: "Python",               level: "expert"       }
+      - { name: "C/C++",                level: "advanced"     }
+      - { name: "MATLAB",               level: "intermediate" }
+      - { name: "Verilog/SystemVerilog",level: "intermediate" }
+      - { name: "CUDA",                 level: "intermediate" }
+
+  - category: "Deep Learning / ML"
+    items:
+      - { name: "PyTorch",              level: "expert"       }
+      - { name: "TensorFlow / Keras",   level: "advanced"     }
+      - { name: "JAX",                  level: "intermediate" }
+      - { name: "ONNX / TensorRT",      level: "intermediate" }
+
+  - category: "Tools & Infrastructure"
+    items:
+      - { name: "Git / GitHub",         level: "advanced"     }
+      - { name: "Docker",               level: "intermediate" }
+      - { name: "Linux",                level: "advanced"     }
+      - { name: "AWS / GCP",            level: "beginner"     }
+
+  - category: "Hardware / EDA"
+    items:
+      - { name: "Cadence Virtuoso",             level: "intermediate" }
+      - { name: "Synopsys Design Compiler",     level: "intermediate" }
+      - { name: "Mentor ModelSim",              level: "intermediate" }
+
+  - category: "Languages"
+    items:
+      - { name: "Korean",   level: "native"    }
+      - { name: "English",  level: "advanced"  }  # 예: "advanced (TOEIC 950)"
+
+
+# ── 발표 / Invited Talks ───────────────────────────────────────
+talks:
+
+  - title:    "Talk or Presentation Title"
+    event:    "Workshop / Seminar / Conference Name"
+    location: "Seoul, South Korea"
+    date:     "2024-07-15"   # YYYY-MM-DD
+    slides:   ""
+    video:    ""
+
+
+# ── 강의 조교 / Teaching ───────────────────────────────────────
+teaching:
+
+  - course:       "Introduction to Machine Learning (EE XXX)"
+    institution:  "KAIST"
+    role:         "Teaching Assistant"
+    period:       "2022 Spring"
+    description:  "Graded assignments, held office hours, and gave two guest lectures."
+
+
+# ── 학술 활동 / Professional Service ──────────────────────────
+service:
+
+  - role:         "Reviewer"
+    organization: "IEEE TPAMI, NeurIPS, ICML, ICLR"
+    period:       "2023–present"
+
+  - role:         "Student Member"
+    organization: "IEEE, IEIE (대한전자공학회)"
+    period:       "2021–present"

@@ -1,0 +1,580 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your Name ??AI & Hardware Engineer</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg:         #f5f4f0;
+      --white:      #ffffff;
+      --surface:    #eeecea;
+      --border:     #dedad5;
+      --accent:     #1a56db;
+      --accent-lt:  #e8eefb;
+      --text:       #1a1a1a;
+      --muted:      #767676;
+      --tag-bg:     #ebebeb;
+      --sidebar-w:  290px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Pretendard', 'IBM Plex Sans', sans-serif;
+      font-weight: 300;
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* ?먥븧 SIDEBAR ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧??*/
+    .sidebar {
+      width: var(--sidebar-w);
+      min-width: var(--sidebar-w);
+      background: var(--white);
+      border-right: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 28px 40px;
+    }
+
+    .avatar-wrap {
+      position: relative;
+      width: 100%;
+      max-width: 218px;
+      margin: 0 auto 22px;
+      padding: 5px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 2px 10px rgba(0,0,0,0.035);
+    }
+    .sidebar-site-link {
+      align-self: center;
+      margin: 0 0 10px;
+      font-family: 'Pretendard', 'IBM Plex Sans', sans-serif;
+      font-style: normal;
+      font-weight: 700;
+      font-size: 22px;
+      color: #7d7d7d;
+      text-decoration: none;
+      letter-spacing: 0.01em;
+      text-align: center;
+      background: rgba(255,255,255,0.52);
+      border-radius: 999px;
+      padding: 2px 12px;
+      backdrop-filter: blur(2px);
+      -webkit-backdrop-filter: blur(2px);
+    }
+    .sidebar-site-link:hover {
+      color: #666666;
+      text-decoration: none;
+    }
+    .avatar-flip {
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      background: transparent;
+      cursor: pointer;
+      display: block;
+      position: relative;
+    }
+    .avatar-flip-inner {
+      position: absolute;
+      inset: 0;
+      display: block;
+      overflow: hidden;
+      border-radius: 10px;
+      --morph-ms: 920ms;
+    }
+    .avatar-flip-inner::after {
+      content: "";
+      position: absolute;
+      inset: -12%;
+      pointer-events: none;
+      opacity: 0;
+      transform: scale(1.08);
+      transition: opacity 180ms linear, transform var(--morph-ms) cubic-bezier(0.22, 0.61, 0.36, 1);
+      background:
+        radial-gradient(circle at 20% 30%, rgba(255,255,255,0.28) 0 22%, transparent 54%),
+        radial-gradient(circle at 75% 20%, rgba(45,105,220,0.18) 0 18%, transparent 50%),
+        radial-gradient(circle at 68% 80%, rgba(255,255,255,0.16) 0 24%, transparent 58%);
+      mix-blend-mode: soft-light;
+      z-index: 5;
+    }
+    .avatar {
+      width: 100%;
+      height: 100%;
+      border-radius: 10px;
+      object-fit: cover;
+      border: 1px solid #d4d8df;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.055);
+      display: block;
+    }
+    .avatar-front-img,
+    .avatar-back-img {
+      position: absolute;
+      inset: 0;
+      display: block;
+      transition:
+        opacity calc(var(--morph-ms) * 0.92) cubic-bezier(0.22, 0.61, 0.36, 1),
+        transform var(--morph-ms) cubic-bezier(0.22, 0.61, 0.36, 1),
+        filter var(--morph-ms) cubic-bezier(0.22, 0.61, 0.36, 1);
+      transform-origin: center center;
+      will-change: opacity, transform;
+    }
+    .avatar-front-img {
+      z-index: 2;
+      transform: scaleX(1);
+      opacity: 1;
+      filter: blur(0) saturate(1) contrast(1);
+    }
+    .avatar-back-img {
+      z-index: 1;
+      transform: scaleX(1) scale(1.035);
+      opacity: 0;
+      filter: blur(12px) saturate(0.88) contrast(1.08);
+    }
+    .avatar-wrap.is-flipped .avatar-front-img {
+      opacity: 0;
+      transform: scaleX(1) scale(1.03);
+      filter: blur(11px) saturate(0.84) contrast(1.1);
+    }
+    .avatar-wrap.is-flipped .avatar-back-img {
+      opacity: 1;
+      transform: scaleX(1);
+      filter: blur(0) saturate(1) contrast(1);
+    }
+    .avatar-wrap.is-morphing .avatar-flip-inner::after {
+      opacity: 0.34;
+      transform: scale(1);
+    }
+    .avatar-placeholder {
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      border-radius: 10px;
+      background: linear-gradient(140deg, #dde4f5 0%, #c8d6f0 100%);
+      border: 1px solid #d4d8df;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 44px;
+    }
+
+    .sb-name {
+      font-family: 'Lora', 'Pretendard', serif; font-size: 27px; font-weight: 600;
+      text-align: center; letter-spacing: -0.01em; margin-bottom: 5px;
+    }
+    .sb-title {
+      font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 10.5px;
+      color: var(--accent); letter-spacing: 0.10em; text-transform: uppercase;
+      text-align: center; margin-bottom: 32px;
+    }
+    .sb-divider { width: 100%; height: 1px; background: var(--border); margin-bottom: 28px; }
+
+    .sb-section { width: 100%; margin-bottom: 28px; }
+    .sb-label {
+      font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 9.5px;
+      letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 12px;
+    }
+
+    .contact-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .contact-list li a,
+    .contact-list li .nolink {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 12.5px; color: var(--text); text-decoration: none;
+      padding: 7px 10px; border-radius: 8px;
+      transition: background 0.18s, color 0.18s;
+    }
+    .contact-list li a:hover { background: var(--accent-lt); color: var(--accent); }
+    .nolink { cursor: default; }
+    .c-icon {
+      width: 28px; height: 28px; border-radius: 7px;
+      background: var(--tag-bg);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; flex-shrink: 0;
+    }
+    .c-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .skill-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .skill-tag {
+      background: var(--tag-bg); border: 1px solid var(--border);
+      border-radius: 6px; font-family: 'IBM Plex Mono', 'Pretendard', monospace;
+      font-size: 10.5px; padding: 4px 9px; color: #444;
+      transition: background 0.18s, color 0.18s, border-color 0.18s;
+    }
+    .skill-tag:hover { background: var(--accent-lt); color: var(--accent); border-color: #b6caef; }
+
+    .lang-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+    .lang-item { display: flex; flex-direction: column; gap: 5px; }
+    .lang-row { display: flex; justify-content: space-between; }
+    .lang-name { font-size: 12.5px; }
+    .lang-level { font-size: 11px; color: var(--muted); }
+    .lang-track { height: 3px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .lang-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent) 0%, #60a5fa 100%); }
+
+    /* ?먥븧 MAIN ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧??*/
+    .main { flex: 1; min-width: 0; padding: 56px 64px; }
+
+    .hero { margin-bottom: 60px; }
+    .hero-eyebrow {
+      font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 10.5px;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+      margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+    }
+    .hero-eyebrow::before {
+      content: ''; display: inline-block;
+      width: 24px; height: 1.5px; background: var(--accent);
+    }
+    .hero h1 {
+      font-family: 'Lora', 'Pretendard', serif; font-size: clamp(28px, 3.4vw, 46px);
+      font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 22px;
+    }
+    .hero h1 em {
+      display: inline-block;
+      margin-top: 4px;
+      font-size: 0.68em;
+      line-height: 1.25;
+      font-style: italic;
+      color: var(--accent);
+    }
+    .hero-summary {
+      font-size: 15px; line-height: 1.85; color: #555; max-width: 680px;
+      border-left: 2px solid var(--border); padding-left: 20px;
+      text-align: justify;
+      text-justify: inter-word;
+    }
+
+    section { margin-bottom: 56px; }
+    .sec-head { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; }
+    .sec-head h2 { font-family: 'Lora', 'Pretendard', serif; font-size: 19px; font-weight: 600; white-space: nowrap; }
+    .sec-line { flex: 1; height: 1px; background: var(--border); }
+
+    /* Experience */
+    .exp-list { display: flex; flex-direction: column; gap: 16px; }
+    .exp-card {
+      background: var(--white); border: 1px solid var(--border);
+      border-radius: 14px; padding: 26px 30px;
+      display: grid; grid-template-columns: 1fr auto; gap: 2px 20px;
+      transition: box-shadow 0.2s, border-color 0.2s;
+    }
+    .exp-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.06); border-color: #c5cfe8; }
+    .exp-role { font-size: 15px; font-weight: 500; margin-bottom: 2px; }
+    .exp-company { font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 11px; color: var(--accent); margin-bottom: 10px; }
+    .exp-period { font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 11px; color: var(--muted); text-align: right; white-space: nowrap; }
+    .exp-loc { font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 10.5px; color: var(--muted); text-align: right; }
+    .exp-desc { grid-column: 1 / -1; font-size: 13.5px; line-height: 1.75; color: #555; }
+    .exp-tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+    .exp-tag {
+      background: var(--accent-lt); border-radius: 6px;
+      font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 10.5px;
+      padding: 3px 9px; color: var(--accent);
+    }
+
+    /* Education */
+    .edu-list { display: flex; flex-direction: column; gap: 12px; }
+    .edu-card {
+      background: var(--white); border: 1px solid var(--border); border-radius: 14px;
+      padding: 22px 28px; display: flex; justify-content: space-between;
+      align-items: flex-start; gap: 16px;
+      transition: box-shadow 0.2s, border-color 0.2s;
+    }
+    .edu-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.06); border-color: #c5cfe8; }
+    .edu-degree { font-size: 14.5px; font-weight: 500; margin-bottom: 3px; }
+    .edu-school { font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 11px; color: var(--accent); margin-bottom: 5px; }
+    .edu-detail { font-size: 12.5px; color: var(--muted); }
+    .edu-year { font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+    /* Publications */
+    .pub-list { display: flex; flex-direction: column; gap: 14px; }
+    .pub-card {
+      background: var(--white); border: 1px solid var(--border); border-radius: 14px;
+      padding: 22px 28px; transition: box-shadow 0.2s, border-color 0.2s;
+    }
+    .pub-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.06); border-color: #c5cfe8; }
+    .pub-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .pub-venue {
+      font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 10.5px;
+      color: var(--white); background: var(--accent);
+      padding: 2px 8px; border-radius: 4px; letter-spacing: 0.04em;
+    }
+    .pub-year { font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 10.5px; color: var(--muted); }
+    .pub-title { font-size: 14.5px; font-weight: 500; margin-bottom: 6px; }
+    .pub-desc { font-size: 13px; color: #666; line-height: 1.7; margin-bottom: 12px; }
+    .pub-link {
+      font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 11px; color: var(--accent);
+      text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
+      border-bottom: 1px solid transparent; transition: border-color 0.18s;
+    }
+    .pub-link:hover { border-color: var(--accent); }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .main > * { animation: fadeUp 0.5s ease both; }
+    .main > *:nth-child(1) { animation-delay: 0.04s; }
+    .main > *:nth-child(2) { animation-delay: 0.12s; }
+    .main > *:nth-child(3) { animation-delay: 0.20s; }
+    .main > *:nth-child(4) { animation-delay: 0.28s; }
+    .main > *:nth-child(5) { animation-delay: 0.34s; }
+
+    @media (max-width: 860px) {
+      body { flex-direction: column; }
+      .sidebar {
+        width: 100%; min-width: unset; height: auto;
+        position: static; border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding: 36px 28px 28px;
+      }
+      .main { padding: 36px 28px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ?먥븧 SIDEBAR ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧 -->
+  <aside class="sidebar">
+
+    <a class="sidebar-site-link" id="sidebar-site-link" href="#">HIGHERIDEAL</a>
+
+    <div class="avatar-wrap">
+      <!-- ?ㅼ젣 ?ъ쭊?쇰줈 援먯껜: <img class="avatar" src="photo.jpg" alt="Your Name"> -->
+      <div class="avatar-placeholder">👤</div>
+    </div>
+
+    <div class="sb-name">Your Name</div>
+    <div class="sb-title">AI 쨌 Hardware Engineer</div>
+
+    <div class="sb-divider"></div>
+
+    <div class="sb-section">
+      <div class="sb-label">Contact</div>
+      <ul class="contact-list">
+        <li>
+          <a href="mailto:your@email.com">
+            <span class="c-icon">?됵툘</span>
+            <span class="c-text">your@email.com</span>
+          </a>
+        </li>
+        <li>
+          <a href="https://github.com/yourid" target="_blank">
+            <span class="c-icon">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="#1a1a1a">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+              </svg>
+            </span>
+            <span class="c-text">github.com/yourid</span>
+          </a>
+        </li>
+        <li>
+          <a href="https://linkedin.com/in/yourid" target="_blank">
+            <span class="c-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#0a66c2">
+                <path d="M20.447 20.452H16.89v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+              </svg>
+            </span>
+            <span class="c-text">linkedin.com/in/yourid</span>
+          </a>
+        </li>
+        <li>
+          <div class="nolink">
+            <span class="c-icon">?뱧</span>
+            <span class="c-text">Seoul, South Korea</span>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <!--
+    <div class="sb-section">
+      <div class="sb-label">Core Skills</div>
+      <div class="skill-tags">
+        <span class="skill-tag">PyTorch</span>
+        <span class="skill-tag">CUDA</span>
+        <span class="skill-tag">C++</span>
+        <span class="skill-tag">Python</span>
+        <span class="skill-tag">TensorRT</span>
+        <span class="skill-tag">VHDL</span>
+        <span class="skill-tag">RISC-V</span>
+        <span class="skill-tag">LLM</span>
+        <span class="skill-tag">Quantization</span>
+        <span class="skill-tag">HLS</span>
+      </div>
+    </div>
+    -->
+
+    <div class="sb-section">
+      <div class="sb-label">Languages</div>
+      <ul class="lang-list">
+        <li class="lang-item">
+          <div class="lang-row">
+            <span class="lang-name">Korean</span>
+            <span class="lang-level">Native</span>
+          </div>
+          <div class="lang-track"><div class="lang-fill" style="width:100%"></div></div>
+        </li>
+        <li class="lang-item">
+          <div class="lang-row">
+            <span class="lang-name">English</span>
+            <span class="lang-level">Professional</span>
+          </div>
+          <div class="lang-track"><div class="lang-fill" style="width:82%"></div></div>
+        </li>
+      </ul>
+    </div>
+
+  </aside>
+
+
+  <!-- ?먥븧 MAIN CONTENT ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧??-->
+  <main class="main">
+
+    <div class="hero">
+      <h1>
+        Pushing intelligence<br>
+        to the <em>edge of silicon.</em>
+      </h1>
+      <p class="hero-summary">
+        AI & hardware engineer bridging the gap between frontier models and real-world chips.
+        Focused on efficient inference, neural architecture design, and hardware-software co-optimization
+        for autonomous systems and edge accelerators.
+        <!-- ??2??臾몄옣?쇰줈 蹂몄씤 ?뚭컻 援먯껜 -->
+      </p>
+    </div>
+
+    <section>
+      <div class="sec-head">
+        <h2>Experience</h2>
+        <div class="sec-line"></div>
+      </div>
+      <div class="exp-list">
+
+        <div class="exp-card">
+          <div>
+            <div class="exp-role">AI Research Engineer</div>
+            <div class="exp-company">Company Name &nbsp;쨌&nbsp; Full-time</div>
+          </div>
+          <div>
+            <div class="exp-period">2023 ??Present</div>
+            <div class="exp-loc">Seoul, KR</div>
+          </div>
+          <p class="exp-desc">
+            2?? lines describing your role and measurable impact.
+            Example: Developed a quantization pipeline reducing LLM inference latency by 40% on embedded NPU targets.
+          </p>
+          <div class="exp-tags">
+            <span class="exp-tag">PyTorch</span>
+            <span class="exp-tag">CUDA</span>
+            <span class="exp-tag">Model Quantization</span>
+            <span class="exp-tag">TensorRT</span>
+          </div>
+        </div>
+
+        <div class="exp-card">
+          <div>
+            <div class="exp-role">Machine Learning Engineer Intern</div>
+            <div class="exp-company">Previous Company &nbsp;쨌&nbsp; Internship</div>
+          </div>
+          <div>
+            <div class="exp-period">2022 ??2023</div>
+            <div class="exp-loc">Seoul, KR</div>
+          </div>
+          <p class="exp-desc">
+            Brief description of responsibilities and key achievements.
+            Quantify impact wherever possible.
+          </p>
+          <div class="exp-tags">
+            <span class="exp-tag">Computer Vision</span>
+            <span class="exp-tag">FPGA</span>
+            <span class="exp-tag">HLS</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <h2>Education</h2>
+        <div class="sec-line"></div>
+      </div>
+      <div class="edu-list">
+
+        <div class="edu-card">
+          <div>
+            <div class="edu-degree">M.S. in Electrical &amp; Computer Engineering</div>
+            <div class="edu-school">University Name</div>
+            <div class="edu-detail">Thesis: "Your Thesis Title Here"</div>
+          </div>
+          <div class="edu-year">2021 ??2023</div>
+        </div>
+
+        <div class="edu-card">
+          <div>
+            <div class="edu-degree">B.S. in Computer Science &amp; Engineering</div>
+            <div class="edu-school">University Name</div>
+            <div class="edu-detail">GPA 4.2 / 4.5 &nbsp;쨌&nbsp; Summa Cum Laude</div>
+          </div>
+          <div class="edu-year">2017 ??2021</div>
+        </div>
+
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <h2>Publications &amp; Projects</h2>
+        <div class="sec-line"></div>
+      </div>
+      <div class="pub-list">
+
+        <div class="pub-card">
+          <div class="pub-meta">
+            <span class="pub-venue">NeurIPS 2024</span>
+            <span class="pub-year">2024</span>
+          </div>
+          <div class="pub-title">Your Paper or Project Title Here</div>
+          <p class="pub-desc">
+            One or two sentences describing the key contribution, method, and result.
+            Focus on what makes this work novel and its real-world significance.
+          </p>
+          <a class="pub-link" href="#" target="_blank">??arXiv &nbsp;/&nbsp; GitHub</a>
+        </div>
+
+        <div class="pub-card">
+          <div class="pub-meta">
+            <span class="pub-venue">ICCV 2024</span>
+            <span class="pub-year">2024</span>
+          </div>
+          <div class="pub-title">Another Paper or Open-Source Project</div>
+          <p class="pub-desc">
+            Brief description of the project or paper. Highlight real-world applicability or benchmark results.
+          </p>
+          <a class="pub-link" href="#" target="_blank">??GitHub</a>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script defer src="./app.js"></script>
+</body>
+</html>
+
