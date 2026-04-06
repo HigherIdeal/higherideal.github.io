@@ -73,9 +73,20 @@
       background: var(--surface);
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 2px 10px rgba(0,0,0,0.035);
     }
+    .sidebar-topbar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 0 12px;
+    }
     .sidebar-site-link {
-      align-self: center;
-      margin: 0 0 10px;
+      display: inline-flex;
+      align-items: center;
+      flex: 1 1 auto;
+      min-width: 0;
+      margin: 0;
       font-family: 'Pretendard', 'IBM Plex Sans', sans-serif;
       font-style: normal;
       font-weight: 700;
@@ -83,16 +94,125 @@
       color: #7d7d7d;
       text-decoration: none;
       letter-spacing: 0.01em;
-      text-align: center;
+      text-align: left;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
       background: rgba(255,255,255,0.52);
       border-radius: 999px;
-      padding: 2px 12px;
+      padding: 2px 8px 2px 6px;
       backdrop-filter: blur(2px);
       -webkit-backdrop-filter: blur(2px);
     }
     .sidebar-site-link:hover {
       color: #666666;
       text-decoration: none;
+    }
+    .locale-toggle {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: none;
+      background: transparent;
+      cursor: default;
+      touch-action: none;
+    }
+    .locale-toggle:focus-visible {
+      outline: 2px solid rgba(148, 163, 184, 0.6);
+      outline-offset: 4px;
+      border-radius: 999px;
+    }
+    .locale-toggle-track {
+      --locale-track-w: 60px;
+      --locale-track-h: 24px;
+      --locale-thumb-w: 26px;
+      --locale-thumb-h: 18px;
+      --locale-thumb-pad: 2px;
+      --locale-pos: 1;
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      align-items: center;
+      width: var(--locale-track-w);
+      height: var(--locale-track-h);
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid rgba(206, 210, 217, 0.98);
+      background: rgba(245, 247, 249, 0.98);
+      overflow: hidden;
+      isolation: isolate;
+      touch-action: none;
+      user-select: none;
+    }
+    .locale-toggle-option {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+      height: 100%;
+      font-family: 'IBM Plex Sans', 'Pretendard', sans-serif;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      line-height: 1;
+      color: rgba(110, 116, 125, 0.94);
+      user-select: none;
+    }
+    .locale-toggle-thumb {
+      position: absolute;
+      top: var(--locale-thumb-pad);
+      left: var(--locale-thumb-pad);
+      z-index: 2;
+      width: var(--locale-thumb-w);
+      height: var(--locale-thumb-h);
+      border-radius: 9px;
+      transform: translateX(calc((var(--locale-track-w) - var(--locale-thumb-w) - (var(--locale-thumb-pad) * 2)) * var(--locale-pos)));
+      transition: transform 0.22s ease;
+      overflow: hidden;
+      isolation: isolate;
+      pointer-events: auto;
+      cursor: grab;
+    }
+    .locale-toggle-thumb-glass {
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      isolation: isolate;
+      pointer-events: none;
+    }
+    .locale-toggle-thumb-glass::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      border-radius: inherit;
+      border: 1px solid rgba(255,255,255,0.56);
+      background:
+        radial-gradient(circle at 28% 24%, rgba(255,255,255,0.8), transparent 42%),
+        linear-gradient(180deg, rgba(255,255,255,0.24), transparent 72%),
+        rgba(255,255,255,0.06);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.72),
+        inset 0 -6px 10px rgba(240,244,250,0.08),
+        0 3px 10px rgba(102, 110, 123, 0.16);
+      pointer-events: none;
+    }
+    .locale-toggle-thumb-glass::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      border-radius: inherit;
+      backdrop-filter: url(#locale-toggle-liquid-filter);
+      -webkit-backdrop-filter: url(#locale-toggle-liquid-filter);
+      pointer-events: none;
+    }
+    .locale-toggle[data-dragging="1"] .locale-toggle-thumb {
+      transition: none;
+      cursor: grabbing;
     }
     .avatar-flip {
       width: 100%;
@@ -193,43 +313,81 @@
     .sb-title {
       font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 10.5px;
       color: var(--accent); letter-spacing: 0.10em; text-transform: uppercase;
-      text-align: center; margin-bottom: 32px;
+      text-align: center; margin-bottom: 18px;
     }
-    .sb-divider { width: 100%; height: 1px; background: var(--border); margin-bottom: 28px; }
+    .sb-divider { display: none; }
 
     .sb-section { width: 100%; margin-bottom: 28px; }
+    .sidebar > .sb-section:first-of-type { margin-top: 2px; }
     .sb-label {
       font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 9.5px;
       letter-spacing: 0.16em; text-transform: uppercase;
       color: var(--muted); margin-bottom: 12px;
     }
 
-    .contact-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
-    .contact-list li a,
-    .contact-list li .nolink {
-      display: flex; align-items: center; gap: 10px;
-      font-size: 12.5px; color: var(--text); text-decoration: none;
-      padding: 7px 10px; border-radius: 8px;
-      transition: background 0.18s, color 0.18s;
+    .contact-list {
+      list-style: none;
+      display: flex;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      width: 100%;
+      min-width: 0;
+      gap: 0;
+      align-items: center;
     }
-    .contact-list li a:hover { background: var(--accent-lt); color: var(--accent); }
-    .nolink { cursor: default; }
-    .c-icon {
-      width: 28px; height: 28px; border-radius: 7px;
-      background: var(--tag-bg);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 13px; flex-shrink: 0;
+    .contact-list li { display: flex; flex: 0 0 auto; }
+    .contact-icon-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      flex: 0 0 30px;
+      text-decoration: none;
+      border-radius: 999px;
+      transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s, background 0.18s;
+    }
+    .contact-icon-link:hover {
+      transform: translateY(-1px);
+    }
+    .contact-icon-badge {
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.88);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 3px 10px rgba(0,0,0,0.03);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .contact-icon-link:hover .contact-icon-badge {
+      background: var(--accent-lt);
+      border-color: #b6caef;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.75), 0 6px 14px rgba(26,86,219,0.07);
+    }
+    .contact-icon-svg {
+      width: 21px;
+      height: 21px;
+      max-width: 21px;
+      max-height: 21px;
+      display: block;
+      object-fit: contain;
     }
     .c-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    .skill-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-    .skill-tag {
+    .skill-tags,
+    .tool-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .skill-tag,
+    .tool-tag {
       background: var(--tag-bg); border: 1px solid var(--border);
       border-radius: 6px; font-family: 'IBM Plex Mono', 'Pretendard', monospace;
       font-size: 10.5px; padding: 4px 9px; color: #444;
       transition: background 0.18s, color 0.18s, border-color 0.18s;
     }
-    .skill-tag:hover { background: var(--accent-lt); color: var(--accent); border-color: #b6caef; }
+    .skill-tag:hover,
+    .tool-tag:hover { background: var(--accent-lt); color: var(--accent); border-color: #b6caef; }
 
     .lang-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
     .lang-item { display: flex; flex-direction: column; gap: 5px; }
@@ -327,6 +485,19 @@
     .pub-year { font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 10.5px; color: var(--muted); }
     .pub-title { font-size: 14.5px; font-weight: 500; margin-bottom: 6px; }
     .pub-desc { font-size: 13px; color: #666; line-height: 1.7; margin-bottom: 12px; }
+    .pub-card-sci .pub-venue,
+    .pub-card-sci .pub-venue-under-review {
+      background: var(--accent);
+      border-color: #2f61c6;
+      color: var(--white);
+    }
+    .pub-card-patent .pub-desc {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      overflow: hidden;
+      max-height: calc(1.7em * 3);
+    }
     .pub-link {
       font-family: 'IBM Plex Mono', 'Pretendard', monospace; font-size: 11px; color: var(--accent);
       text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
@@ -353,6 +524,17 @@
         border-bottom: 1px solid var(--border);
         padding: 36px 28px 28px;
       }
+      .sidebar-topbar {
+        margin-bottom: 10px;
+      }
+      .sidebar-site-link {
+        font-size: 20px;
+      }
+      .contact-list {
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: center;
+      }
       .main { padding: 36px 28px; }
     }
   </style>
@@ -362,7 +544,16 @@
   <!-- ?먥븧 SIDEBAR ?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧?먥븧 -->
   <aside class="sidebar">
 
-    <a class="sidebar-site-link" id="sidebar-site-link" href="#">HIGHERIDEAL</a>
+    <div class="sidebar-topbar">
+      <a class="sidebar-site-link" id="sidebar-site-link" href="#">HIGHERIDEAL</a>
+      <button class="locale-toggle is-en" id="locale-toggle" type="button" aria-label="Switch language">
+        <span class="locale-toggle-track" aria-hidden="true">
+          <span class="locale-toggle-option locale-toggle-option-ko">KO</span>
+          <span class="locale-toggle-option locale-toggle-option-en">EN</span>
+          <span class="locale-toggle-thumb"><span class="locale-toggle-thumb-glass"></span></span>
+        </span>
+      </button>
+    </div>
 
     <div class="avatar-wrap">
       <!-- ?ㅼ젣 ?ъ쭊?쇰줈 援먯껜: <img class="avatar" src="photo.jpg" alt="Your Name"> -->
@@ -376,40 +567,7 @@
 
     <div class="sb-section">
       <div class="sb-label">Contact</div>
-      <ul class="contact-list">
-        <li>
-          <a href="mailto:your@email.com">
-            <span class="c-icon">?됵툘</span>
-            <span class="c-text">your@email.com</span>
-          </a>
-        </li>
-        <li>
-          <a href="https://github.com/yourid" target="_blank">
-            <span class="c-icon">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="#1a1a1a">
-                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-              </svg>
-            </span>
-            <span class="c-text">github.com/yourid</span>
-          </a>
-        </li>
-        <li>
-          <a href="https://linkedin.com/in/yourid" target="_blank">
-            <span class="c-icon">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="#0a66c2">
-                <path d="M20.447 20.452H16.89v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-              </svg>
-            </span>
-            <span class="c-text">linkedin.com/in/yourid</span>
-          </a>
-        </li>
-        <li>
-          <div class="nolink">
-            <span class="c-icon">?뱧</span>
-            <span class="c-text">Seoul, South Korea</span>
-          </div>
-        </li>
-      </ul>
+      <ul class="contact-list"></ul>
     </div>
 
     <!--
@@ -432,22 +590,12 @@
 
     <div class="sb-section">
       <div class="sb-label">Languages</div>
-      <ul class="lang-list">
-        <li class="lang-item">
-          <div class="lang-row">
-            <span class="lang-name">Korean</span>
-            <span class="lang-level">Native</span>
-          </div>
-          <div class="lang-track"><div class="lang-fill" style="width:100%"></div></div>
-        </li>
-        <li class="lang-item">
-          <div class="lang-row">
-            <span class="lang-name">English</span>
-            <span class="lang-level">Professional</span>
-          </div>
-          <div class="lang-track"><div class="lang-fill" style="width:82%"></div></div>
-        </li>
-      </ul>
+      <ul class="lang-list"></ul>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Tools</div>
+      <div class="tool-tags"></div>
     </div>
 
   </aside>

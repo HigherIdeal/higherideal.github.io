@@ -1,52 +1,293 @@
-const DOC_PATH = "./doc.yaml";
+const DOC_PATHS = {
+  en: "./doc.yaml",
+  ko: "./doc_ko.yaml",
+};
+const DEFAULT_LOCALE = "en";
+const LOCALE_STORAGE_KEY = "higherideal-locale";
 const YAML_CDN = "https://cdn.jsdelivr.net/npm/js-yaml@4/dist/js-yaml.min.js";
 
 const LEVEL_META = {
-  native: { label: "Native", width: 100 },
-  expert: { label: "Expert", width: 92 },
-  advanced: { label: "Advanced", width: 82 },
-  intermediate: { label: "Intermediate", width: 64 },
-  beginner: { label: "Beginner", width: 45 },
+  native: { width: 100 },
+  expert: { width: 92 },
+  advanced: { width: 82 },
+  intermediate: { width: 64 },
+  beginner: { width: 45 },
+};
+const UI_STRINGS = {
+  en: {
+    siteLabels: ["HIGHERIDEAL", "HigherIdeal", "더높은이상을향해"],
+    defaults: {
+      name: "Your Name",
+      title: "AI & Hardware Engineer",
+      institution: "Institution",
+      degree: "Degree",
+      publication: "Publication",
+      project: "Project",
+      patent: "Patent",
+    },
+    toggle: {
+      switchToEnglish: "Switch to English",
+      switchToKorean: "Switch to Korean",
+    },
+    sidebar: {
+      contact: "Contact",
+      languages: "Programming Languages",
+      tools: "Tools",
+    },
+    nav: {
+      top: "TOP",
+      overview: "Overview",
+      publications: "Publications",
+      patents: "Patents",
+      projects: "Projects",
+      cv: "CV",
+    },
+    overview: {
+      title: "Overview",
+      educations: "Education",
+      empty: "Education details will be added soon.",
+      thesis: "Thesis",
+      gpa: "GPA",
+    },
+    contact: {
+      email: "Email",
+      phone: "Phone",
+      github: "GitHub",
+      linkedin: "LinkedIn",
+      googleScholar: "Google Scholar",
+      orcid: "ORCID",
+      cv: "Curriculum Vitae",
+    },
+    placeholders: {
+      publications: "Publications will be added soon.",
+      patents: "No patents listed yet.",
+      projects: "Projects will be added soon.",
+      cvMissing: "CV link is not set yet.",
+      cvVenue: "Resume",
+      cvTitle: "Curriculum Vitae",
+      cvDescription: "Open the latest CV document.",
+      openCv: "Open CV",
+      readMore: "Read more",
+      projectPage: "Project page",
+      inventors: "Inventors",
+    },
+    status: {
+      publication: {
+        underReview: "Under Review",
+        published: "Published",
+        accepted: "Accepted",
+        inPreparation: "In Preparation",
+      },
+      patent: {
+        registered: "Registered",
+        filed: "Filed",
+        pending: "Pending",
+        abandoned: "Abandoned",
+      },
+    },
+    patentType: {
+      domestic: "Korea",
+      international: "International",
+      pct: "PCT",
+    },
+    levels: {
+      native: "Native",
+      expert: "Expert",
+      advanced: "Advanced",
+      intermediate: "Intermediate",
+      beginner: "Beginner",
+    },
+    present: "Present",
+    locale: "en",
+  },
+  ko: {
+    siteLabels: ["HIGHERIDEAL", "HigherIdeal", "더높은이상을향해"],
+    defaults: {
+      name: "Your Name",
+      title: "AI & Hardware Engineer",
+      institution: "Institution",
+      degree: "Degree",
+      publication: "Publication",
+      project: "Project",
+      patent: "Patent",
+    },
+    toggle: {
+      switchToEnglish: "Switch to English",
+      switchToKorean: "Switch to Korean",
+    },
+    sidebar: {
+      contact: "Contact",
+      languages: "Programming Languages",
+      tools: "Tools",
+    },
+    nav: {
+      top: "TOP",
+      overview: "Overview",
+      publications: "Publications",
+      patents: "Patents",
+      projects: "Projects",
+      cv: "CV",
+    },
+    overview: {
+      title: "Overview",
+      educations: "Education",
+      empty: "Education details will be added soon.",
+      thesis: "Thesis",
+      gpa: "GPA",
+    },
+    contact: {
+      email: "Email",
+      phone: "Phone",
+      github: "GitHub",
+      linkedin: "LinkedIn",
+      googleScholar: "Google Scholar",
+      orcid: "ORCID",
+      cv: "Curriculum Vitae",
+    },
+    placeholders: {
+      publications: "Publications will be added soon.",
+      patents: "No patents listed yet.",
+      projects: "Projects will be added soon.",
+      cvMissing: "CV link is not set yet.",
+      cvVenue: "Resume",
+      cvTitle: "Curriculum Vitae",
+      cvDescription: "Open the latest CV document.",
+      openCv: "Open CV",
+      readMore: "Read more",
+      projectPage: "Project page",
+      inventors: "Inventors",
+    },
+    status: {
+      publication: {
+        underReview: "Under Review",
+        published: "Published",
+        accepted: "Accepted",
+        inPreparation: "In Preparation",
+      },
+      patent: {
+        registered: "Registered",
+        filed: "Filed",
+        pending: "Pending",
+        abandoned: "Abandoned",
+      },
+    },
+    patentType: {
+      domestic: "Korea",
+      international: "International",
+      pct: "PCT",
+    },
+    levels: {
+      native: "Native",
+      expert: "Expert",
+      advanced: "Advanced",
+      intermediate: "Intermediate",
+      beginner: "Beginner",
+    },
+    present: "Present",
+    locale: "ko",
+  },
 };
 let navScrollRafId = null;
 let navFrameBound = false;
 let navDragBound = false;
 let navLiquidRebuildTimerId = null;
+let localeToggleLiquidRebuildTimerId = null;
+let localeToggleFrameBound = false;
 const AVATAR_MORPH_MS = 920;
-const SIDEBAR_SITE_LABELS = ["HIGHERIDEAL", "HigherIdeal", "HIGHER__IDEAL", "더높은이상을향해"];
+const SIDEBAR_SITE_LABELS = ["HIGHERIDEAL", "HigherIdeal", "더높은이상을향해"];
 const SIDEBAR_TYPING_HOLD_MS = 10000;
 const SIDEBAR_TYPING_TOTAL_MS = 1000;
 const SIDEBAR_DELETE_TOTAL_MS = 500;
 const SIDEBAR_PHRASE_GAP_MS = 260;
 let sidebarTypingTimerId = null;
 let sidebarTypingRunId = 0;
+let currentLocale = DEFAULT_LOCALE;
+let localeRenderRunId = 0;
 let viewportResetBound = false;
 let viewportResetBlocked = false;
 const viewportResetTimeoutIds = new Set();
 const viewportResetRafIds = new Set();
 const NAV_CONTENT_ORDER = [
-  { id: "publications", label: "Publications" },
-  { id: "patents", label: "Patents" },
-  { id: "projects", label: "Projects" },
-  { id: "cv", label: "CV" },
+  { id: "publications", key: "publications" },
+  { id: "patents", key: "patents" },
+  { id: "projects", key: "projects" },
+  { id: "cv", key: "cv" },
 ];
-const NAV_INITIAL_Y_NUDGE = -8;
+const NAV_INITIAL_Y_NUDGE = -10;
 const NAV_LIQUID_FILTER_ID = "top-nav-liquid-filter";
 const NAV_LIQUID_DEFS_ID = "top-nav-liquid-defs";
+const LOCALE_TOGGLE_LIQUID_FILTER_ID = "locale-toggle-liquid-filter";
+const LOCALE_TOGGLE_LIQUID_DEFS_ID = "locale-toggle-liquid-defs";
+const MOUNT_NAVIGATOR_ON_BODY = true;
+const NAV_BOX_SETTINGS = {
+  width: 500,
+  minHeight: 70,
+  radius: 20,
+  padX: 4,
+  padY: 4,
+  gap: 7,
+  fontSize: 11,
+  pillPadX: 10,
+  pillPadY: 6,
+  iconSize: 17,
+  pillBlur: 12,
+};
 const NAV_LIQUID_SETTINGS = {
-  glassThickness: 140,
-  bezelWidth: 40,
-  refractiveIndex: 1.6,
-  scaleRatio: 1.0,
-  blurAmount: 1.0,
-  specularOpacity: 0.55,
-  specularSaturation: 7,
-  shadowColor: "rgba(255, 255, 255, 0.45)",
+  glassThickness: 60,
+  bezelWidth: 80,
+  refractiveIndex: 2.0,
+  scaleRatio: 1.4,
+  blurAmount: 0.0,
+  specularOpacity: 0.4,
+  specularSaturation: 4,
+  borderOpacity: 0.07,
+  shadowColor: "255, 255, 255",
+  shadowOpacity: 0.4,
   shadowBlur: 0,
-  shadowSpread: -5,
+  shadowSpread: -9,
   tintColor: "255, 255, 255",
   tintOpacity: 0.0,
-  outerShadowBlur: 0,
+  outerShadowBlur: 15,
+};
+const LOCALE_TOGGLE_LIQUID_SETTINGS = {
+  glassThickness: 12,
+  bezelWidth: 7,
+  refractiveIndex: 1.9,
+  scaleRatio: 1.32,
+  blurAmount: 0,
+  specularOpacity: 0.24,
+  specularSaturation: 3.2,
+};
+const CONTACT_ICON_BASE_PATH = "./assets/icons";
+const CONTACT_ICON_SOURCES = {
+  email: {
+    label: "Email",
+    iconUrl: `${CONTACT_ICON_BASE_PATH}/gmail.svg`,
+  },
+  github: {
+    label: "GitHub",
+    iconUrl: `${CONTACT_ICON_BASE_PATH}/github.svg`,
+  },
+  linkedin: {
+    label: "LinkedIn",
+    iconUrl: `${CONTACT_ICON_BASE_PATH}/linkedin.svg`,
+  },
+  google_scholar: {
+    label: "Google Scholar",
+    iconUrl: `${CONTACT_ICON_BASE_PATH}/google-scholar.svg`,
+  },
+  orcid: {
+    label: "ORCID",
+    iconUrl: `${CONTACT_ICON_BASE_PATH}/orcid.svg`,
+  },
+  phone: {
+    label: "Phone",
+    iconUrl: `${CONTACT_ICON_BASE_PATH}/phone.svg`,
+  },
+  cv: {
+    label: "CV",
+    iconUrl: `${CONTACT_ICON_BASE_PATH}/cv.svg`,
+  },
 };
 
 if ("scrollRestoration" in history) {
@@ -72,6 +313,65 @@ function pick(...values) {
   return "";
 }
 
+function normalizeLocale(value) {
+  return String(value || "").toLowerCase().trim() === "ko" ? "ko" : "en";
+}
+
+function getLocaleStrings(locale = currentLocale) {
+  return UI_STRINGS[normalizeLocale(locale)] || UI_STRINGS.en;
+}
+
+function pickLocalized(locale, koValue, enValue, ...fallbacks) {
+  return normalizeLocale(locale) === "ko"
+    ? pick(koValue, enValue, ...fallbacks)
+    : pick(enValue, koValue, ...fallbacks);
+}
+
+function detectInitialLocale() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return normalizeLocale(params.get("lang"));
+  } catch {}
+  return DEFAULT_LOCALE;
+}
+
+function persistLocale(locale) {
+  return normalizeLocale(locale);
+}
+
+function getNavItems(locale = currentLocale) {
+  const strings = getLocaleStrings(locale);
+  return NAV_CONTENT_ORDER.map((item) => ({
+    id: item.id,
+    label: strings.nav[item.key],
+  }));
+}
+
+function sectionJumpAria(label, locale = currentLocale) {
+  return normalizeLocale(locale) === "ko" ? `${label} ?뱀뀡?쇰줈 ?대룞` : `Go to ${label} section`;
+}
+
+function toNamedList(items = []) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => {
+      if (typeof item === "string") {
+        return { name: pick(item) };
+      }
+      if (item && typeof item === "object") {
+        return { ...item, name: pick(item.name, item.label) };
+      }
+      return null;
+    })
+    .filter((item) => item && isFilled(item.name));
+}
+
+function clampNumber(value, min, max, fallback = min) {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -81,21 +381,49 @@ function escapeHtml(value) {
 }
 
 function joinWithDot(parts) {
-  return parts.filter(isFilled).map((v) => String(v).trim()).join(" · ");
+  return parts.filter(isFilled).map((v) => String(v).trim()).join(" / ");
 }
 
-function formatPeriod(start, end) {
+function joinWithSpace(parts) {
+  return parts.filter(isFilled).map((v) => String(v).trim()).join(" ");
+}
+
+function formatPeriod(start, end, locale = currentLocale) {
   const s = pick(start);
   const e = pick(end);
+  const strings = getLocaleStrings(locale);
   if (!s && !e) return "";
-  if (!e) return `${s} - Present`;
+  if (!e) return `${s} - ${strings.present}`;
   return `${s} - ${e}`;
 }
 
-function formatLevel(levelText) {
+function formatMonthValue(value, locale = currentLocale) {
+  const raw = pick(value);
+  const strings = getLocaleStrings(locale);
+  if (!raw) return "";
+  if (/^present$/i.test(raw)) return strings.present;
+  const monthMatch = raw.match(/^(\d{4})-(\d{2})(?:-\d{2})?$/);
+  if (monthMatch) return `${monthMatch[1]}.${monthMatch[2]}`;
+  return raw;
+}
+
+function formatMonthPeriod(start, end, locale = currentLocale) {
+  const strings = getLocaleStrings(locale);
+  const s = formatMonthValue(start, locale);
+  const e = formatMonthValue(end, locale);
+  if (!s && !e) return "";
+  if (!e) return `${s} - ${strings.present}`;
+  return `${s} - ${e}`;
+}
+
+function formatLevel(levelText, locale = currentLocale) {
   const key = String(levelText || "").toLowerCase().trim();
-  const info = LEVEL_META[key] || { label: pick(levelText, "Intermediate"), width: 60 };
-  return info;
+  const strings = getLocaleStrings(locale);
+  const info = LEVEL_META[key] || { width: 60 };
+  return {
+    label: strings.levels[key] || pick(levelText, strings.levels.intermediate),
+    width: info.width,
+  };
 }
 
 function summarizeText(text, max = 180) {
@@ -152,21 +480,77 @@ function publicationIndexLabel(pub = {}) {
   return "";
 }
 
-function patentStatusLabel(status) {
+function patentStatusLabel(status, locale = currentLocale) {
   const s = String(status || "").toLowerCase().trim();
-  if (s.includes("registered")) return "Registered";
-  if (s.includes("filed")) return "Filed";
-  if (s.includes("pending")) return "Pending";
-  if (s.includes("abandoned")) return "Abandoned";
+  const strings = getLocaleStrings(locale);
+  if (s.includes("registered")) return strings.status.patent.registered;
+  if (s.includes("filed")) return strings.status.patent.filed;
+  if (s.includes("pending")) return strings.status.patent.pending;
+  if (s.includes("abandoned")) return strings.status.patent.abandoned;
   return pick(status);
 }
 
-function publicationStatusLabel(status) {
+function isForeignPatent(patent = {}) {
+  const typeKey = normalizeNameKey(patent.type);
+  const countryKey = normalizeNameKey(patent.country);
+  if (typeKey) return typeKey !== "domestic";
+  return Boolean(countryKey) && !["korea", "southkorea", "republicofkorea"].includes(countryKey);
+}
+
+const SEMICONDUCTOR_PROJECT_KEYWORDS = [
+  "semiconductor",
+  "chipdesign",
+  "neurochip",
+  "neuromorphic",
+  "neurocomputing",
+  "aihardware",
+  "hardwaredesign",
+  "npu",
+  "accelerator",
+  "memoryinterface",
+  "memoryinterfaceip",
+  "lpddr",
+  "dram",
+  "ddr",
+  "hbm",
+  "asic",
+  "fpga",
+  "rtl",
+  "verilog",
+  "systemverilog",
+  "artificialintelligence",
+  "machinelearning",
+  "deeplearning",
+  "generativeai",
+  "ai",
+  "llm",
+  "largelanguagemodel",
+  "transformer",
+  "neuralnetwork",
+  "computervision",
+  "visionlanguage",
+];
+
+function isSemiconductorProject(project = {}) {
+  const haystack = normalizeNameKey(
+    [
+      pick(project.title),
+      pick(project.description),
+      ...(Array.isArray(project.highlights) ? project.highlights.map((item) => pick(item)) : []),
+      ...(Array.isArray(project.tech_stack) ? project.tech_stack.map((item) => pick(item)) : []),
+    ].join(" "),
+  );
+
+  return SEMICONDUCTOR_PROJECT_KEYWORDS.some((keyword) => haystack.includes(keyword));
+}
+
+function publicationStatusLabel(status, locale = currentLocale) {
   const s = String(status || "").toLowerCase().trim();
-  if (s.includes("under_review") || s.includes("under review")) return "Under Review";
-  if (s.includes("published")) return "Published";
-  if (s.includes("accepted")) return "Accepted";
-  if (s.includes("in_preparation") || s.includes("in preparation")) return "In Preparation";
+  const strings = getLocaleStrings(locale);
+  if (s.includes("under_review") || s.includes("under review")) return strings.status.publication.underReview;
+  if (s.includes("published")) return strings.status.publication.published;
+  if (s.includes("accepted")) return strings.status.publication.accepted;
+  if (s.includes("in_preparation") || s.includes("in preparation")) return strings.status.publication.inPreparation;
   return pick(status);
 }
 
@@ -264,14 +648,6 @@ function calculateNavLiquidRefractionProfile(glassThickness, bezelWidth, heightF
   return profile;
 }
 
-function navSdRoundedRect(px, py, halfW, halfH, radius) {
-  const qx = Math.abs(px) - halfW + radius;
-  const qy = Math.abs(py) - halfH + radius;
-  const mx = Math.max(qx, 0);
-  const my = Math.max(qy, 0);
-  return Math.min(Math.max(qx, qy), 0) + Math.hypot(mx, my) - radius;
-}
-
 function generateNavLiquidDisplacementMap(width, height, radius, bezelWidth, profile, maxDisp) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -288,46 +664,32 @@ function generateNavLiquidDisplacementMap(width, height, radius, bezelWidth, pro
     data[i + 3] = 255;
   }
 
-  const halfW = width / 2;
-  const halfH = height / 2;
+  const r = radius;
+  const rSq = r * r;
+  const r1Sq = (r + 1) ** 2;
+  const rBSq = Math.max(r - bezelWidth, 0) ** 2;
+  const wBody = width - r * 2;
+  const hBody = height - r * 2;
   const samples = profile.length;
-  const edgeSpan = Math.max(1, bezelWidth);
-  const eps = 0.7;
 
   for (let py = 0; py < height; py++) {
     for (let px = 0; px < width; px++) {
-      const x = px + 0.5 - halfW;
-      const y = py + 0.5 - halfH;
-      const sd = navSdRoundedRect(x, y, halfW, halfH, radius);
-      if (sd > 1.2) continue;
+      const x = px < r ? px - r : px >= width - r ? px - r - wBody : 0;
+      const y = py < r ? py - r : py >= height - r ? py - r - hBody : 0;
+      const dSq = x * x + y * y;
+      if (dSq > r1Sq || dSq < rBSq) continue;
 
-      const distFromEdge = Math.max(0, -sd);
-      const t = Math.min(1, distFromEdge / edgeSpan);
-      const idxProfile = Math.min(Math.floor(t * (samples - 1)), samples - 1);
+      const dist = Math.sqrt(dSq);
+      const fromSide = r - dist;
+      const op = dSq < rSq ? 1 : 1 - (dist - Math.sqrt(rSq)) / (Math.sqrt(r1Sq) - Math.sqrt(rSq));
+      if (op <= 0 || dist === 0) continue;
+
+      const cos = x / dist;
+      const sin = y / dist;
+      const idxProfile = Math.min(((fromSide / bezelWidth) * samples) | 0, samples - 1);
       const disp = profile[idxProfile] || 0;
-      if (Math.abs(disp) < 1e-6) continue;
-
-      let gx = navSdRoundedRect(x + eps, y, halfW, halfH, radius) - sd;
-      let gy = navSdRoundedRect(x, y + eps, halfW, halfH, radius) - sd;
-      let gm = Math.hypot(gx, gy);
-      if (gm < 1e-5) {
-        const dxSide = halfW - Math.abs(x);
-        const dySide = halfH - Math.abs(y);
-        if (dxSide <= dySide) {
-          gx = x >= 0 ? 1 : -1;
-          gy = 0;
-        } else {
-          gx = 0;
-          gy = y >= 0 ? 1 : -1;
-        }
-        gm = 1;
-      }
-
-      const nx = gx / gm;
-      const ny = gy / gm;
-      const dX = (-nx * disp) / maxDisp;
-      const dY = (-ny * disp) / maxDisp;
-      const op = sd > 0 ? Math.max(0, 1 - sd) : 1;
+      const dX = (-cos * disp) / maxDisp;
+      const dY = (-sin * disp) / maxDisp;
 
       const idx = (py * width + px) * 4;
       data[idx] = (128 + dX * 127 * op + 0.5) | 0;
@@ -389,11 +751,11 @@ function generateNavLiquidSpecularMap(width, height, radius, bezelWidth, angle =
   return canvas.toDataURL();
 }
 
-function ensureNavigatorLiquidDefs() {
-  let svg = qs("#top-nav-liquid-svg");
+function ensureLiquidDefs(svgId, defsId) {
+  let svg = qs(`#${svgId}`);
   if (!svg) {
     svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("id", "top-nav-liquid-svg");
+    svg.setAttribute("id", svgId);
     svg.setAttribute("width", "0");
     svg.setAttribute("height", "0");
     svg.setAttribute("color-interpolation-filters", "sRGB");
@@ -403,13 +765,137 @@ function ensureNavigatorLiquidDefs() {
     document.body.appendChild(svg);
   }
 
-  let defs = qs(`#${NAV_LIQUID_DEFS_ID}`, svg);
+  let defs = qs(`#${defsId}`, svg);
   if (!defs) {
     defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-    defs.setAttribute("id", NAV_LIQUID_DEFS_ID);
+    defs.setAttribute("id", defsId);
     svg.appendChild(defs);
   }
   return defs;
+}
+
+function ensureNavigatorLiquidDefs() {
+  return ensureLiquidDefs("top-nav-liquid-svg", NAV_LIQUID_DEFS_ID);
+}
+
+function ensureLocaleToggleLiquidDefs() {
+  return ensureLiquidDefs("locale-toggle-liquid-svg", LOCALE_TOGGLE_LIQUID_DEFS_ID);
+}
+
+function rebuildLocaleToggleLiquidFilter() {
+  const thumb = qs(".locale-toggle-thumb");
+  if (!thumb) return;
+
+  const rect = thumb.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(rect.height));
+  if (width <= 0 || height <= 0) return;
+
+  const computed = window.getComputedStyle(thumb);
+  const rawRadius = parseFloat(computed.borderTopLeftRadius) || Math.min(width, height) / 2;
+  const maxRadius = Math.min(width, height) / 2;
+  const radius = clampNumber(rawRadius, 2, maxRadius, maxRadius);
+  const maxBezel = Math.max(2, radius - 1);
+  const bezelWidth = clampNumber(
+    LOCALE_TOGGLE_LIQUID_SETTINGS.bezelWidth,
+    2,
+    maxBezel,
+    Math.min(LOCALE_TOGGLE_LIQUID_SETTINGS.bezelWidth, maxBezel),
+  );
+  const profile = calculateNavLiquidRefractionProfile(
+    LOCALE_TOGGLE_LIQUID_SETTINGS.glassThickness,
+    bezelWidth,
+    navLiquidSurfaceConvexSquircle,
+    LOCALE_TOGGLE_LIQUID_SETTINGS.refractiveIndex,
+    96,
+  );
+  const maxDisp = Math.max(1, bezelWidth * LOCALE_TOGGLE_LIQUID_SETTINGS.scaleRatio);
+  const dispMap = generateNavLiquidDisplacementMap(width, height, radius, bezelWidth, profile, maxDisp);
+  const specMap = generateNavLiquidSpecularMap(width, height, radius, bezelWidth, Math.PI / 3);
+  if (!dispMap || !specMap) return;
+
+  const defs = ensureLocaleToggleLiquidDefs();
+  defs.innerHTML = `
+    <filter id="${LOCALE_TOGGLE_LIQUID_FILTER_ID}" x="0%" y="0%" width="100%" height="100%">
+      <feImage href="${dispMap}" x="0%" y="0%" width="100%" height="100%" result="dispMap" />
+      <feGaussianBlur in="SourceGraphic" stdDeviation="${Math.max(0, LOCALE_TOGGLE_LIQUID_SETTINGS.blurAmount)}" result="blur" />
+      <feDisplacementMap
+        in="blur"
+        in2="dispMap"
+        scale="${maxDisp}"
+        xChannelSelector="R"
+        yChannelSelector="G"
+        result="glass"
+      />
+      <feImage href="${specMap}" x="0%" y="0%" width="100%" height="100%" result="specMap" />
+      <feColorMatrix in="specMap" type="saturate" values="${LOCALE_TOGGLE_LIQUID_SETTINGS.specularSaturation}" result="specColor" />
+      <feComposite in="specColor" in2="SourceAlpha" operator="in" result="specMasked" />
+      <feComponentTransfer in="specMasked" result="specOut">
+        <feFuncA type="linear" slope="${LOCALE_TOGGLE_LIQUID_SETTINGS.specularOpacity}" />
+      </feComponentTransfer>
+      <feBlend in="glass" in2="specOut" mode="screen" />
+    </filter>
+  `;
+}
+
+function scheduleLocaleToggleLiquidFilterRebuild(delay = 24) {
+  if (localeToggleLiquidRebuildTimerId !== null) {
+    window.clearTimeout(localeToggleLiquidRebuildTimerId);
+  }
+  localeToggleLiquidRebuildTimerId = window.setTimeout(() => {
+    localeToggleLiquidRebuildTimerId = null;
+    rebuildLocaleToggleLiquidFilter();
+  }, delay);
+}
+
+function applyLiquidSurfaceVars(target, thinBoost = 1) {
+  if (!target) return;
+
+  const effectiveShadowBlur = Math.max(0, Number(NAV_LIQUID_SETTINGS.shadowBlur) || 0);
+  const effectiveShadowColor =
+    effectiveShadowBlur > 0
+      ? `rgba(${NAV_LIQUID_SETTINGS.shadowColor}, ${clampNumber(NAV_LIQUID_SETTINGS.shadowOpacity, 0, 1, 0.48)})`
+      : "rgba(255, 255, 255, 0)";
+  const effectiveShadowSpread = effectiveShadowBlur > 0 ? NAV_LIQUID_SETTINGS.shadowSpread : 0;
+  target.style.setProperty("--nav-liquid-shadow-color", effectiveShadowColor);
+  target.style.setProperty("--nav-liquid-shadow-blur", `${effectiveShadowBlur}px`);
+  target.style.setProperty("--nav-liquid-shadow-spread", `${effectiveShadowSpread}px`);
+  target.style.setProperty("--nav-liquid-tint-color", NAV_LIQUID_SETTINGS.tintColor);
+  target.style.setProperty("--nav-liquid-tint-opacity", String(NAV_LIQUID_SETTINGS.tintOpacity));
+  target.style.setProperty("--nav-liquid-outer-shadow-blur", `${NAV_LIQUID_SETTINGS.outerShadowBlur}px`);
+  target.style.setProperty("--nav-liquid-border-opacity", String(clampNumber(NAV_LIQUID_SETTINGS.borderOpacity, 0, 1, 0.42)));
+  target.style.setProperty("--nav-liquid-boost", thinBoost.toFixed(3));
+}
+
+function applyNavigatorRuntimeSettings() {
+  const nav = qs(".top-nav-wrap");
+  const liquid = nav ? qs(".top-nav-liquid", nav) : null;
+  const list = nav ? qs(".top-nav-list", nav) : null;
+  if (!nav || !liquid || !list) return;
+
+  nav.style.width = NAV_BOX_SETTINGS.width > 0 ? `${Math.round(NAV_BOX_SETTINGS.width)}px` : "fit-content";
+  nav.style.borderRadius = `${Math.round(NAV_BOX_SETTINGS.radius)}px`;
+  liquid.style.minHeight = NAV_BOX_SETTINGS.minHeight > 0 ? `${Math.round(NAV_BOX_SETTINGS.minHeight)}px` : "";
+  liquid.style.padding = `${Math.round(NAV_BOX_SETTINGS.padY)}px ${Math.round(NAV_BOX_SETTINGS.padX)}px`;
+  list.style.gap = `${Math.round(NAV_BOX_SETTINGS.gap)}px`;
+  nav.style.setProperty("--nav-pill-blur", `${NAV_BOX_SETTINGS.pillBlur}px`);
+
+  qsa(".top-nav-link", nav).forEach((link) => {
+    link.style.fontSize = `${NAV_BOX_SETTINGS.fontSize}px`;
+    link.style.padding = `${Math.round(NAV_BOX_SETTINGS.pillPadY)}px ${Math.round(NAV_BOX_SETTINGS.pillPadX)}px`;
+  });
+
+  qsa(".top-nav-link .c-icon", nav).forEach((icon) => {
+    const iconSize = Math.round(NAV_BOX_SETTINGS.iconSize);
+    icon.style.width = `${iconSize}px`;
+    icon.style.height = `${iconSize}px`;
+    icon.style.fontSize = `${Math.max(8, Math.round(iconSize * 0.5))}px`;
+  });
+}
+
+function cleanupLegacyNavigatorControls() {
+  qs("#top-nav-control-panel")?.remove();
+  qs("#top-nav-control-style")?.remove();
 }
 
 function rebuildNavigatorLiquidFilter() {
@@ -436,10 +922,10 @@ function rebuildNavigatorLiquidFilter() {
   if (!(clampedBezel > 0)) return;
 
   const thinBoost = Math.max(1, Math.min(2.4, 96 / Math.max(height, 1)));
-  const adaptiveBezel = Math.min(Math.max(1, clampedBezel * thinBoost), Math.max(1, Math.min(width, height) / 2 - 1));
-  const adaptiveThickness = NAV_LIQUID_SETTINGS.glassThickness * Math.max(1, 0.6 * thinBoost);
-  const adaptiveScaleRatio = NAV_LIQUID_SETTINGS.scaleRatio * Math.max(1.3, thinBoost * 1.1);
-  const adaptiveBlur = Math.max(NAV_LIQUID_SETTINGS.blurAmount, 0.6);
+  const adaptiveBezel = Math.min(Math.max(1, clampedBezel), Math.max(1, Math.min(width, height) / 2 - 1));
+  const adaptiveThickness = NAV_LIQUID_SETTINGS.glassThickness * Math.max(1, 0.58 * thinBoost);
+  const adaptiveScaleRatio = NAV_LIQUID_SETTINGS.scaleRatio * Math.max(1.24, thinBoost * 1.06);
+  const adaptiveBlur = Math.max(0, NAV_LIQUID_SETTINGS.blurAmount);
   const adaptiveSpecSat = Math.max(1, NAV_LIQUID_SETTINGS.specularSaturation);
 
   const profile = calculateNavLiquidRefractionProfile(
@@ -474,16 +960,7 @@ function rebuildNavigatorLiquidFilter() {
     </filter>
   `;
 
-  const effectiveShadowBlur = Math.max(0, Number(NAV_LIQUID_SETTINGS.shadowBlur) || 0);
-  const effectiveShadowColor = effectiveShadowBlur > 0 ? NAV_LIQUID_SETTINGS.shadowColor : "rgba(255, 255, 255, 0)";
-  const effectiveShadowSpread = effectiveShadowBlur > 0 ? NAV_LIQUID_SETTINGS.shadowSpread : 0;
-  liquid.style.setProperty("--nav-liquid-shadow-color", effectiveShadowColor);
-  liquid.style.setProperty("--nav-liquid-shadow-blur", `${effectiveShadowBlur}px`);
-  liquid.style.setProperty("--nav-liquid-shadow-spread", `${effectiveShadowSpread}px`);
-  liquid.style.setProperty("--nav-liquid-tint-color", NAV_LIQUID_SETTINGS.tintColor);
-  liquid.style.setProperty("--nav-liquid-tint-opacity", String(NAV_LIQUID_SETTINGS.tintOpacity));
-  liquid.style.setProperty("--nav-liquid-outer-shadow-blur", `${NAV_LIQUID_SETTINGS.outerShadowBlur}px`);
-  liquid.style.setProperty("--nav-liquid-boost", thinBoost.toFixed(3));
+  applyLiquidSurfaceVars(liquid, thinBoost);
 }
 
 function scheduleNavigatorLiquidFilterRebuild(delay = 24) {
@@ -603,7 +1080,8 @@ function createSection(main, id, title, listClass, extraListClasses = []) {
   return section;
 }
 
-function ensureOverviewStructure(main) {
+function ensureOverviewStructure(main, locale = currentLocale) {
+  const strings = getLocaleStrings(locale);
   const hero = qs(".hero", main);
   if (!hero) return null;
   hero.id = "overview";
@@ -620,7 +1098,7 @@ function ensureOverviewStructure(main) {
     h2 = document.createElement("h2");
     head.appendChild(h2);
   }
-  h2.textContent = "Overview";
+  h2.textContent = strings.overview.title;
 
   let line = qs(".sec-line", head);
   if (!line) {
@@ -636,7 +1114,10 @@ function ensureOverviewStructure(main) {
     subsection.className = "overview-subsection";
     subsection.innerHTML = `
       <div class="overview-subtitle">Educations</div>
-      <div class="overview-edu-list"></div>
+      <div class="overview-edu-layout">
+        <div class="overview-edu-list"></div>
+        <div class="overview-edu-stats"></div>
+      </div>
     `;
     hero.appendChild(subsection);
   } else {
@@ -646,19 +1127,39 @@ function ensureOverviewStructure(main) {
       title.className = "overview-subtitle";
       subsection.insertAdjacentElement("afterbegin", title);
     }
-    title.textContent = "Educations";
+    title.textContent = strings.overview.educations;
 
-    if (!qs(".overview-edu-list", subsection)) {
+    let layout = qs(".overview-edu-layout", subsection);
+    if (!layout) {
+      layout = document.createElement("div");
+      layout.className = "overview-edu-layout";
+      subsection.appendChild(layout);
+    }
+
+    let list = qs(".overview-edu-list", subsection);
+    if (!list) {
       const list = document.createElement("div");
       list.className = "overview-edu-list";
-      subsection.appendChild(list);
+      layout.appendChild(list);
+    } else if (list.parentElement !== layout) {
+      layout.appendChild(list);
+    }
+
+    if (!qs(".overview-edu-stats", subsection)) {
+      const stats = document.createElement("div");
+      stats.className = "overview-edu-stats";
+      layout.appendChild(stats);
     }
   }
+
+  const subtitle = qs(".overview-subtitle", subsection);
+  if (subtitle) subtitle.textContent = strings.overview.educations;
 
   return subsection;
 }
 
-function ensureMainSectionStructure() {
+function ensureMainSectionStructure(locale = currentLocale) {
+  const strings = getLocaleStrings(locale);
   const main = qs("main.main");
   if (!main) return [];
 
@@ -672,7 +1173,7 @@ function ensureMainSectionStructure() {
     legacyEducationSection.style.display = "none";
   }
 
-  ensureOverviewStructure(main);
+  ensureOverviewStructure(main, locale);
 
   const used = new Set();
   const educationSubsection = qs("#educations");
@@ -681,37 +1182,37 @@ function ensureMainSectionStructure() {
   const publicationSection =
     qs("#publications", main) ||
     findSectionByKeywords(["publication", "paper"], used) ||
-    createSection(main, "publications", "Publications", "pub-list");
+    createSection(main, "publications", strings.nav.publications, "pub-list");
   used.add(publicationSection);
   publicationSection.id = "publications";
-  ensureSectionHeader(publicationSection, "Publications");
+  ensureSectionHeader(publicationSection, strings.nav.publications);
   ensureSectionList(publicationSection, "pub-list");
 
   const patentsSection =
     qs("#patents", main) ||
     findSectionByKeywords(["patent"], used) ||
-    createSection(main, "patents", "Patents", "patent-list", ["pub-list"]);
+    createSection(main, "patents", strings.nav.patents, "patent-list", ["pub-list"]);
   used.add(patentsSection);
   patentsSection.id = "patents";
-  ensureSectionHeader(patentsSection, "Patents");
+  ensureSectionHeader(patentsSection, strings.nav.patents);
   ensureSectionList(patentsSection, "patent-list", ["pub-list"]);
 
   const projectsSection =
     qs("#projects", main) ||
     findSectionByKeywords(["project"], used) ||
-    createSection(main, "projects", "Projects", "project-list", ["pub-list"]);
+    createSection(main, "projects", strings.nav.projects, "project-list", ["pub-list"]);
   used.add(projectsSection);
   projectsSection.id = "projects";
-  ensureSectionHeader(projectsSection, "Projects");
+  ensureSectionHeader(projectsSection, strings.nav.projects);
   ensureSectionList(projectsSection, "project-list", ["pub-list"]);
 
   const cvSection =
     qs("#cv", main) ||
     findSectionByKeywords(["cv", "curriculum vitae", "resume"], used) ||
-    createSection(main, "cv", "CV", "cv-list", ["pub-list"]);
+    createSection(main, "cv", strings.nav.cv, "cv-list", ["pub-list"]);
   used.add(cvSection);
   cvSection.id = "cv";
-  ensureSectionHeader(cvSection, "CV");
+  ensureSectionHeader(cvSection, strings.nav.cv);
   ensureSectionList(cvSection, "cv-list", ["pub-list"]);
 
   const experienceSection = findSectionByKeywords(["experience"], used);
@@ -721,21 +1222,26 @@ function ensureMainSectionStructure() {
     if (section && section.parentElement === main) main.appendChild(section);
   });
 
-  return NAV_CONTENT_ORDER.filter((item) => document.getElementById(item.id));
+  return getNavItems(locale).filter((item) => document.getElementById(item.id));
 }
 
-function ensureNavigatorSection() {
+function ensureNavigatorSection(locale = currentLocale) {
   const main = qs(".main");
   if (!main) return null;
+  cleanupLegacyNavigatorControls();
   main.classList.add("top-nav-enabled");
   document.body.classList.add("layout-centered");
+  const strings = getLocaleStrings(locale);
 
-  let navSection = qs(".top-nav-wrap", main);
+  const navHost = MOUNT_NAVIGATOR_ON_BODY ? document.body : main;
+  let navSection = qs(".top-nav-wrap");
   if (!navSection) {
     navSection = document.createElement("nav");
     navSection.className = "top-nav-wrap";
-    navSection.setAttribute("aria-label", "Section navigation");
-    main.insertAdjacentElement("afterbegin", navSection);
+  }
+  navSection.setAttribute("aria-label", "Section navigation");
+  if (navSection.parentElement !== navHost) {
+    navHost.insertAdjacentElement("afterbegin", navSection);
   }
 
   let styleTag = qs("#top-nav-style");
@@ -768,19 +1274,19 @@ function ensureNavigatorSection() {
         }
       }
       .top-nav-wrap {
+        --top-nav-pill-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(248, 250, 255, 0.18));
+        --top-nav-pill-bg-hover: linear-gradient(180deg, rgba(245, 245, 247, 0.6), rgba(229, 231, 235, 0.36));
+        --top-nav-pill-bg-active: linear-gradient(180deg, rgba(236, 237, 240, 0.82), rgba(216, 219, 224, 0.58));
+        --top-nav-pill-border: rgba(255, 255, 255, 0.42);
+        --top-nav-pill-border-active: rgba(150, 156, 166, 0.84);
+        --nav-pill-blur: 18px;
         position: fixed;
         z-index: 320;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
         width: fit-content;
         max-width: min(96vw, 1200px);
         border: 0;
         border-radius: 75px;
-        padding: 13px 12px;
         background: transparent;
-        isolation: isolate;
-        overflow: hidden;
         cursor: grab;
         touch-action: none;
         user-select: none;
@@ -790,14 +1296,15 @@ function ensureNavigatorSection() {
         -webkit-user-drag: none;
       }
       .top-nav-liquid {
-        position: absolute;
-        inset: 0;
-        z-index: 0;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        max-width: inherit;
         border-radius: inherit;
-        pointer-events: none;
+        padding: 13px 12px;
         touch-action: none;
         isolation: isolate;
-        background-color: rgba(255, 255, 255, 0.01);
         box-shadow: 0 4px var(--nav-liquid-outer-shadow-blur, 24px) rgba(0, 0, 0, 0.18);
       }
       .top-nav-liquid::before {
@@ -806,24 +1313,24 @@ function ensureNavigatorSection() {
         inset: 0;
         z-index: 1;
         border-radius: inherit;
-        border: 1px solid rgba(255, 255, 255, 0.34);
+        border: 1px solid rgba(255, 255, 255, var(--nav-liquid-border-opacity, 0.42));
         box-shadow: inset 0 0 var(--nav-liquid-shadow-blur, 20px) var(--nav-liquid-shadow-spread, -5px)
           var(--nav-liquid-shadow-color, rgba(255, 255, 255, 0.45));
-        background-color: rgba(var(--nav-liquid-tint-color, 255, 255, 255), var(--nav-liquid-tint-opacity, 0.06));
+        background:
+          radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.36) 0, rgba(255, 255, 255, 0.12) 20%, transparent 42%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.07) 46%, rgba(226, 234, 248, 0.18)),
+          rgba(var(--nav-liquid-tint-color, 255, 255, 255), var(--nav-liquid-tint-opacity, 0.06));
         pointer-events: none;
       }
       .top-nav-liquid::after {
         content: "";
         position: absolute;
         inset: 0;
-        z-index: 0;
+        z-index: -1;
         border-radius: inherit;
-        backdrop-filter: blur(0.85px) saturate(1.08);
-        -webkit-backdrop-filter: blur(0.85px) saturate(1.08);
         backdrop-filter: url(#top-nav-liquid-filter);
         -webkit-backdrop-filter: url(#top-nav-liquid-filter);
         isolation: isolate;
-        background: rgba(255, 255, 255, 0.01);
         pointer-events: none;
       }
       .top-nav-wrap.is-dragging {
@@ -838,6 +1345,7 @@ function ensureNavigatorSection() {
         list-style: none;
         display: flex;
         flex-wrap: wrap;
+        max-width: 100%;
         gap: 7px;
         justify-content: center;
         align-items: center;
@@ -850,26 +1358,57 @@ function ensureNavigatorSection() {
         gap: 6px;
         text-decoration: none;
         color: var(--text);
-        border: 1px solid rgba(197, 204, 217, 0.82);
+        border: 1px solid var(--top-nav-pill-border);
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.62);
+        background: var(--top-nav-pill-bg);
         padding: 6px 10px;
         font-size: 11px;
         font-weight: 500;
         line-height: 1.2;
-        transition: background 0.18s, color 0.18s, border-color 0.18s;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.42),
+          0 10px 24px rgba(118, 133, 158, 0.14);
+        backdrop-filter: blur(var(--nav-pill-blur, 18px)) saturate(1.15);
+        -webkit-backdrop-filter: blur(var(--nav-pill-blur, 18px)) saturate(1.15);
+        transition:
+          background 0.18s,
+          color 0.18s,
+          border-color 0.18s,
+          box-shadow 0.18s,
+          transform 0.18s;
         user-select: none;
         -webkit-user-drag: none;
       }
       .top-nav-link:hover {
-        background: var(--accent-lt);
-        color: var(--accent);
-        border-color: #b6caef;
+        background: var(--top-nav-pill-bg-hover);
+        color: #4f545d;
+        border-color: rgba(170, 176, 185, 0.88);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.52),
+          0 12px 28px rgba(86, 92, 104, 0.16);
+        transform: translateY(-1px);
+      }
+      .top-nav-link.is-active {
+        background: var(--top-nav-pill-bg-active);
+        color: #4c5058;
+        border-color: var(--top-nav-pill-border-active);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.58),
+          0 14px 30px rgba(73, 80, 92, 0.18);
       }
       .top-nav-link .c-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
         width: 18px;
         height: 18px;
         font-size: 9px;
+        line-height: 1;
+        text-align: center;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.46);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.52);
       }
       .top-nav-title {
         font-size: 9.5px;
@@ -895,6 +1434,12 @@ function ensureNavigatorSection() {
         letter-spacing: 0.02em;
         margin-bottom: 10px;
       }
+      #educations .overview-edu-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.7fr) minmax(190px, 0.95fr);
+        gap: 24px;
+        align-items: start;
+      }
       #educations .overview-edu-list {
         position: relative;
         margin-left: 2px;
@@ -902,6 +1447,7 @@ function ensureNavigatorSection() {
         display: flex;
         flex-direction: column;
         gap: 14px;
+        min-width: 0;
       }
       #educations .overview-edu-list::before {
         content: "";
@@ -944,6 +1490,104 @@ function ensureNavigatorSection() {
         color: var(--muted);
         line-height: 1.65;
       }
+      #educations .overview-edu-stats {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-self: stretch;
+        justify-self: end;
+        width: 100%;
+        max-width: 230px;
+        padding-top: 2px;
+      }
+      #educations .overview-edu-stat {
+        --overview-stat-accent: var(--accent);
+        appearance: none;
+        -webkit-appearance: none;
+        width: 100%;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        border-radius: 15px;
+        border: 1px solid rgba(216, 221, 230, 0.92);
+        background: rgba(255, 255, 255, 0.78);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.72),
+          0 6px 18px rgba(30, 41, 62, 0.05);
+        padding: 11px 13px;
+        transition:
+          transform 0.18s ease,
+          border-color 0.18s ease,
+          box-shadow 0.18s ease,
+          background 0.18s ease;
+      }
+      #educations .overview-edu-stat:hover {
+        transform: translateY(-1px);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.76),
+          0 10px 20px rgba(30, 41, 62, 0.08);
+      }
+      #educations .overview-edu-stat:focus-visible {
+        outline: 2px solid rgba(103, 117, 145, 0.34);
+        outline-offset: 2px;
+      }
+      #educations .overview-edu-stat::before {
+        content: "";
+        position: absolute;
+        left: 13px;
+        top: 50%;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--overview-stat-accent);
+        transform: translateY(-50%);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--overview-stat-accent) 12%, transparent);
+      }
+      #educations .overview-edu-stat-value {
+        font-family: 'IBM Plex Sans', 'Pretendard', sans-serif;
+        font-size: 22px;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: -0.04em;
+        color: #202633;
+        margin-bottom: 0;
+        padding-left: 8px;
+      }
+      #educations .overview-edu-stat-label {
+        display: inline-flex;
+        align-items: center;
+        font-family: 'IBM Plex Mono', 'Pretendard', monospace;
+        font-size: 9.5px;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+        color: #6e7481;
+        padding-left: 16px;
+      }
+      #educations .overview-edu-stat-publications {
+        --overview-stat-accent: #4c83eb;
+        border-color: rgba(191, 211, 252, 0.95);
+        background: linear-gradient(180deg, rgba(240, 246, 255, 0.92), rgba(252, 253, 255, 0.78));
+      }
+      #educations .overview-edu-stat-patents {
+        --overview-stat-accent: #49a36b;
+        border-color: rgba(187, 225, 199, 0.96);
+        background: linear-gradient(180deg, rgba(241, 251, 244, 0.92), rgba(255, 255, 255, 0.78));
+      }
+      #educations .overview-edu-stat-projects {
+        --overview-stat-accent: #b08750;
+        border-color: rgba(232, 217, 188, 0.96);
+        background: linear-gradient(180deg, rgba(252, 248, 241, 0.92), rgba(255, 252, 248, 0.78));
+      }
+      @media (max-width: 760px) {
+        #educations .overview-edu-layout {
+          grid-template-columns: 1fr;
+        }
+      }
       .pub-meta {
         display: flex;
         align-items: center;
@@ -958,6 +1602,12 @@ function ensureNavigatorSection() {
       .pub-venue-under-review {
         background: #9fa5af;
         border-color: #959ca7;
+        color: #fff;
+      }
+      .pub-card.pub-card-sci .pub-venue,
+      .pub-card.pub-card-sci .pub-venue-under-review {
+        background: var(--accent);
+        border-color: #2f61c6;
         color: #fff;
       }
       .pub-index {
@@ -988,12 +1638,75 @@ function ensureNavigatorSection() {
         position: relative;
         overflow: visible;
       }
+      .pub-card.pub-card-publication {
+        background: var(--white);
+        border-color: var(--border);
+      }
+      .pub-card.pub-card-publication:hover {
+        border-color: #c5cfe8;
+      }
+      .pub-card.pub-card-patent {
+        background: var(--white);
+        border-color: var(--border);
+      }
+      .pub-card.pub-card-patent:hover {
+        border-color: #c5cfe8;
+      }
+      .pub-card.pub-card-project {
+        background: var(--white);
+        border-color: var(--border);
+      }
+      .pub-card.pub-card-project:hover {
+        border-color: #c5cfe8;
+      }
+      .pub-card.pub-card-project .pub-meta {
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+      .pub-card.pub-card-project .pub-venue {
+        line-height: 1.45;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        max-width: min(100%, calc(100% - 118px));
+      }
+      .pub-card.pub-card-project .pub-year {
+        margin-left: auto;
+        white-space: nowrap;
+      }
       .pub-card.pub-card-sci {
-        background: #f3f7ff;
-        border-color: #d3def3;
+        background: #eef4ff;
+        border-color: #c6d7f8;
       }
       .pub-card.pub-card-sci:hover {
-        border-color: #c0d0ee;
+        border-color: #b0c8f4;
+      }
+      .pub-card.pub-card-patent-foreign {
+        background: #eef8f0;
+        border-color: #c2dfca;
+      }
+      .pub-card.pub-card-patent-foreign:hover {
+        border-color: #acd1b7;
+      }
+      .pub-card.pub-card-patent-foreign .pub-venue {
+        background: #49a36b;
+        border-color: #3f8e5b;
+        color: #fff;
+      }
+      .pub-card.pub-card-patent-foreign .pub-index-kci {
+        color: #3f8e5b;
+        font-weight: 600;
+      }
+      .pub-card.pub-card-project-semiconductor {
+        background: #fff4cf;
+        border-color: #e6cf7a;
+      }
+      .pub-card.pub-card-project-semiconductor:hover {
+        border-color: #d8bd60;
+      }
+      .pub-card.pub-card-project-semiconductor .pub-venue {
+        background: #c59a2f;
+        border-color: #ac841d;
+        color: #fff;
       }
       .pub-serial-mark {
         position: absolute;
@@ -1083,7 +1796,7 @@ function ensureNavigatorSection() {
         .main.top-nav-enabled {
           padding-top: 0;
         }
-        .top-nav-wrap {
+        .top-nav-liquid {
           padding: 11px 10px;
         }
       }
@@ -1099,6 +1812,8 @@ function syncNavigatorFrame() {
   const main = qs(".main");
   if (!nav || !main) return;
 
+  applyNavigatorRuntimeSettings();
+
   const isMobile = window.innerWidth <= 860;
   const edgePad = 8;
   const mainRect = main.getBoundingClientRect();
@@ -1108,7 +1823,11 @@ function syncNavigatorFrame() {
   const innerLeft = Math.max(edgePad, mainRect.left + padLeft);
   const innerRight = Math.min(window.innerWidth - edgePad, mainRect.right - padRight);
   const innerWidth = Math.max(220, innerRight - innerLeft);
-  const maxWidth = Math.min(Math.floor(innerWidth), isMobile ? window.innerWidth - 16 : 560);
+  const preferredDesktopWidth = NAV_BOX_SETTINGS.width > 0 ? NAV_BOX_SETTINGS.width : 560;
+  const maxWidth = Math.min(
+    Math.floor(innerWidth),
+    isMobile ? window.innerWidth - 16 : Math.max(560, Math.round(preferredDesktopWidth)),
+  );
 
   nav.style.maxWidth = `${maxWidth}px`;
   nav.style.right = "auto";
@@ -1371,8 +2090,12 @@ function bindNavigatorActiveState() {
   function setActive(id) {
     linkMap.forEach((link, key) => {
       const isActive = key === id;
-      link.style.background = isActive ? "var(--accent-lt)" : "";
-      link.style.color = isActive ? "var(--accent)" : "";
+      link.classList.toggle("is-active", isActive);
+      if (isActive) {
+        link.setAttribute("aria-current", "true");
+      } else {
+        link.removeAttribute("aria-current");
+      }
     });
   }
 
@@ -1440,42 +2163,45 @@ function animateScrollTo(targetY, duration = 560) {
   navScrollRafId = requestAnimationFrame(step);
 }
 
+function navigateToSectionId(id) {
+  const target = document.getElementById(pick(id));
+  if (!target) return false;
+
+  updateScrollTailAllowance();
+
+  const offset = getNavigatorOffset();
+  let targetY = Math.max(0, window.scrollY + target.getBoundingClientRect().top - offset);
+  const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+  if (targetY > maxScroll) {
+    const main = qs(".main");
+    if (main) {
+      const currentTail = Number.parseFloat(main.style.getPropertyValue("--scroll-tail")) || 0;
+      const extra = Math.ceil(targetY - maxScroll + 24);
+      main.style.setProperty("--scroll-tail", `${Math.max(0, currentTail + extra)}px`);
+      targetY = Math.max(0, window.scrollY + target.getBoundingClientRect().top - offset);
+    }
+  }
+
+  const distance = Math.abs(targetY - window.scrollY);
+  const duration = Math.min(980, Math.max(420, 300 + distance * 0.38));
+  animateScrollTo(targetY, duration);
+  return true;
+}
+
+function navigateToHref(href) {
+  if (!String(href || "").startsWith("#")) return false;
+  return navigateToSectionId(String(href).slice(1));
+}
+
+function hasRecentNavigatorDrag() {
+  const nav = qs(".top-nav-wrap");
+  const ts = Number.parseInt(nav?.dataset.lastDragTs || "0", 10);
+  return Number.isFinite(ts) && ts > 0 && Date.now() - ts < 420;
+}
+
 function bindNavigatorSmoothScroll() {
   const links = qsa(".top-nav-link");
   if (links.length === 0) return;
-
-  const hasRecentNavDrag = () => {
-    const nav = qs(".top-nav-wrap");
-    const ts = Number.parseInt(nav?.dataset.lastDragTs || "0", 10);
-    return Number.isFinite(ts) && ts > 0 && Date.now() - ts < 420;
-  };
-
-  const navigateToHref = (href) => {
-    if (!href.startsWith("#")) return false;
-    const id = href.slice(1);
-    const target = document.getElementById(id);
-    if (!target) return false;
-
-    updateScrollTailAllowance();
-
-    const offset = getNavigatorOffset();
-    let targetY = Math.max(0, window.scrollY + target.getBoundingClientRect().top - offset);
-    const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-    if (targetY > maxScroll) {
-      const main = qs(".main");
-      if (main) {
-        const currentTail = Number.parseFloat(main.style.getPropertyValue("--scroll-tail")) || 0;
-        const extra = Math.ceil(targetY - maxScroll + 24);
-        main.style.setProperty("--scroll-tail", `${Math.max(0, currentTail + extra)}px`);
-        targetY = Math.max(0, window.scrollY + target.getBoundingClientRect().top - offset);
-      }
-    }
-
-    const distance = Math.abs(targetY - window.scrollY);
-    const duration = Math.min(980, Math.max(420, 300 + distance * 0.38));
-    animateScrollTo(targetY, duration);
-    return true;
-  };
 
   links.forEach((link) => {
     if (link.dataset.smoothBound === "1") return;
@@ -1483,7 +2209,7 @@ function bindNavigatorSmoothScroll() {
     link.setAttribute("draggable", "false");
 
     link.addEventListener("click", (event) => {
-      if (hasRecentNavDrag()) {
+      if (hasRecentNavigatorDrag()) {
         event.preventDefault();
         return;
       }
@@ -1496,34 +2222,40 @@ function bindNavigatorSmoothScroll() {
   });
 }
 
-function renderNavigator(orderedSections = []) {
-  const navSection = ensureNavigatorSection();
+function renderNavigator(orderedSections = [], locale = currentLocale) {
+  const navSection = ensureNavigatorSection(locale);
   if (!navSection) return;
-  navSection.dataset.dragged = "0";
-  navSection.dataset.initialPlaced = "0";
+  const strings = getLocaleStrings(locale);
+  const preserveDragPosition = navSection.dataset.dragged === "1";
+  if (!preserveDragPosition) {
+    navSection.dataset.dragged = "0";
+    navSection.dataset.initialPlaced = "0";
+  }
 
-  const sections = orderedSections.length > 0 ? orderedSections : ensureMainSectionStructure();
-  const navItems = [{ id: "overview", label: "Overview" }, ...sections];
+  const sections = orderedSections.length > 0 ? orderedSections : ensureMainSectionStructure(locale);
+  const navItems = [{ id: "overview", label: strings.nav.overview }, ...sections];
   if (navItems.length <= 1) return;
 
   navSection.innerHTML = `
-    <div class="top-nav-liquid" aria-hidden="true"></div>
-    <ul class="top-nav-list">
-      ${navItems
-        .map(
-          (item, index) => `
-            <li>
-              <a class="top-nav-link" href="#${escapeHtml(item.id)}">
-                <span class="c-icon">${index === 0 ? "TOP" : index}</span>
-                <span class="c-text">${escapeHtml(item.label)}</span>
-              </a>
-            </li>
-          `,
-        )
-        .join("")}
-    </ul>
+    <div class="top-nav-liquid">
+      <ul class="top-nav-list">
+        ${navItems
+          .map(
+            (item, index) => `
+              <li>
+                <a class="top-nav-link" href="#${escapeHtml(item.id)}">
+                  <span class="c-icon">${index === 0 ? strings.nav.top : index}</span>
+                  <span class="c-text">${escapeHtml(item.label)}</span>
+                </a>
+              </li>
+            `,
+          )
+          .join("")}
+      </ul>
+    </div>
   `;
 
+  applyNavigatorRuntimeSettings();
   bindNavigatorFrameSync();
   bindNavigatorDrag();
   syncNavigatorFrame();
@@ -1557,13 +2289,229 @@ function ensureYamlLib() {
   });
 }
 
-async function loadDoc() {
-  const response = await fetch(DOC_PATH, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to load ${DOC_PATH}: ${response.status}`);
+async function loadDoc(locale = currentLocale) {
+  async function fetchDoc(path) {
+    const response = await fetch(path, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`Failed to load ${path}: ${response.status}`);
+    }
+    const raw = await response.text();
+    return window.jsyaml.load(raw) || {};
   }
-  const raw = await response.text();
-  return window.jsyaml.load(raw) || {};
+
+  const path = DOC_PATHS[normalizeLocale(locale)] || DOC_PATHS.en;
+  try {
+    return await fetchDoc(path);
+  } catch (error) {
+    if (path !== DOC_PATHS.en) {
+      console.warn(`[portfolio] Falling back to ${DOC_PATHS.en} after locale load failure:`, error);
+      return fetchDoc(DOC_PATHS.en);
+    }
+    throw error;
+  }
+}
+
+function renderLocaleToggle(locale = currentLocale) {
+  const toggle = qs("#locale-toggle");
+  if (!toggle) return;
+  const strings = getLocaleStrings(locale);
+  const isKo = normalizeLocale(locale) === "ko";
+  toggle.classList.toggle("is-ko", isKo);
+  toggle.classList.toggle("is-en", !isKo);
+  toggle.setAttribute("aria-pressed", String(isKo));
+  toggle.setAttribute("aria-label", isKo ? strings.toggle.switchToEnglish : strings.toggle.switchToKorean);
+  toggle.title = isKo ? strings.toggle.switchToEnglish : strings.toggle.switchToKorean;
+  if (toggle.dataset.dragging !== "1") {
+    toggle.style.setProperty("--locale-pos", isKo ? "0" : "1");
+  }
+  scheduleLocaleToggleLiquidFilterRebuild(0);
+}
+
+function renderSidebarLabels(locale = currentLocale) {
+  const strings = getLocaleStrings(locale);
+  const labels = qsa(".sidebar .sb-section .sb-label");
+  if (labels[0]) labels[0].textContent = strings.sidebar.contact;
+  if (labels[1]) labels[1].textContent = strings.sidebar.languages;
+  if (labels[2]) labels[2].textContent = strings.sidebar.tools;
+}
+
+async function applyLocale(locale, options = {}) {
+  const { resetViewport = false, persist = true } = options;
+  const nextLocale = normalizeLocale(locale);
+  currentLocale = nextLocale;
+  if (persist) persistLocale(nextLocale);
+  renderLocaleToggle(nextLocale);
+  document.documentElement.lang = getLocaleStrings(nextLocale).locale;
+
+  const runId = ++localeRenderRunId;
+  const doc = await loadDoc(nextLocale);
+  if (runId !== localeRenderRunId) return;
+
+  render(doc, nextLocale);
+  if (resetViewport) resetInitialViewport();
+}
+
+function bindLocaleToggle() {
+  const toggle = qs("#locale-toggle");
+  if (!toggle || toggle.dataset.bound === "1") return;
+  const track = qs(".locale-toggle-track", toggle);
+  const thumb = qs(".locale-toggle-thumb", toggle);
+  if (!track || !thumb) return;
+  toggle.dataset.bound = "1";
+
+  if (!localeToggleFrameBound) {
+    localeToggleFrameBound = true;
+    window.addEventListener("resize", () => scheduleLocaleToggleLiquidFilterRebuild(0));
+    window.addEventListener(
+      "load",
+      () => {
+        scheduleLocaleToggleLiquidFilterRebuild(0);
+        requestAnimationFrame(() => scheduleLocaleToggleLiquidFilterRebuild(0));
+      },
+      { once: true },
+    );
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => scheduleLocaleToggleLiquidFilterRebuild(0));
+    }
+  }
+
+  let dragState = null;
+  let windowPointerMove = null;
+  let windowPointerUp = null;
+  let windowPointerCancel = null;
+
+  const getThumbWidth = () => thumb.getBoundingClientRect().width || 28;
+  const getTrackRect = () => track.getBoundingClientRect();
+  const getLocalePos = (locale) => (normalizeLocale(locale) === "ko" ? 0 : 1);
+  const getTrackMetrics = (grabOffsetX = getThumbWidth() / 2) => {
+    const rect = getTrackRect();
+    const thumbWidth = getThumbWidth();
+    const minLeft = 2;
+    const maxLeft = Math.max(minLeft, rect.width - thumbWidth - 2);
+    const clampedGrabOffset = clampNumber(grabOffsetX, 0, thumbWidth, thumbWidth / 2);
+    return { rect, thumbWidth, minLeft, maxLeft, grabOffsetX: clampedGrabOffset };
+  };
+  const setLocalePos = (pos) => {
+    const nextPos = clampNumber(pos, 0, 1, getLocalePos(currentLocale));
+    toggle.style.setProperty("--locale-pos", String(nextPos));
+    return nextPos;
+  };
+  const posFromClientX = (clientX, grabOffsetX = getThumbWidth() / 2) => {
+    const { rect, minLeft, maxLeft, grabOffsetX: offset } = getTrackMetrics(grabOffsetX);
+    const thumbLeft = clampNumber(clientX - rect.left - offset, minLeft, maxLeft, minLeft);
+    if (maxLeft <= minLeft) return getLocalePos(currentLocale);
+    return (thumbLeft - minLeft) / (maxLeft - minLeft);
+  };
+  const redirectToLocale = (locale) => {
+    const nextUrl = new URL(window.location.href);
+    if (locale === "ko") {
+      nextUrl.searchParams.set("lang", "ko");
+    } else {
+      nextUrl.searchParams.delete("lang");
+    }
+    window.location.assign(nextUrl.toString());
+  };
+  const detachWindowDragListeners = () => {
+    if (windowPointerMove) {
+      window.removeEventListener("pointermove", windowPointerMove);
+      windowPointerMove = null;
+    }
+    if (windowPointerUp) {
+      window.removeEventListener("pointerup", windowPointerUp);
+      windowPointerUp = null;
+    }
+    if (windowPointerCancel) {
+      window.removeEventListener("pointercancel", windowPointerCancel);
+      windowPointerCancel = null;
+    }
+  };
+  const finalizeDrag = (clientX) => {
+    if (!dragState) return;
+    detachWindowDragListeners();
+    const finalPos =
+      typeof clientX === "number"
+        ? posFromClientX(clientX, dragState.grabOffsetX)
+        : dragState.lastPos;
+    const didMove = dragState.didMove;
+    dragState = null;
+    toggle.dataset.dragging = "0";
+    if (!didMove) {
+      renderLocaleToggle(currentLocale);
+      return;
+    }
+    const nextLocale = finalPos <= 0.5 ? "ko" : "en";
+    setLocalePos(getLocalePos(nextLocale));
+    if (nextLocale !== normalizeLocale(currentLocale)) {
+      redirectToLocale(nextLocale);
+      return;
+    }
+    renderLocaleToggle(currentLocale);
+  };
+
+  thumb.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const thumbRect = thumb.getBoundingClientRect();
+    dragState = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      grabOffsetX: clampNumber(
+        event.clientX - thumbRect.left,
+        0,
+        thumbRect.width || getThumbWidth(),
+        (thumbRect.width || getThumbWidth()) / 2,
+      ),
+      lastPos: getLocalePos(currentLocale),
+      didMove: false,
+    };
+    toggle.dataset.dragging = "1";
+    setLocalePos(dragState.lastPos);
+    if (typeof thumb.setPointerCapture === "function") {
+      thumb.setPointerCapture(event.pointerId);
+    }
+    windowPointerMove = (moveEvent) => {
+      if (!dragState || moveEvent.pointerId !== dragState.pointerId) return;
+      if (Math.abs(moveEvent.clientX - dragState.startClientX) >= 3) {
+        dragState.didMove = true;
+      }
+      dragState.lastPos = setLocalePos(posFromClientX(moveEvent.clientX, dragState.grabOffsetX));
+    };
+    windowPointerUp = (upEvent) => {
+      if (!dragState || upEvent.pointerId !== dragState.pointerId) return;
+      finalizeDrag(upEvent.clientX);
+    };
+    windowPointerCancel = (cancelEvent) => {
+      if (!dragState || cancelEvent.pointerId !== dragState.pointerId) return;
+      detachWindowDragListeners();
+      dragState = null;
+      toggle.dataset.dragging = "0";
+      renderLocaleToggle(currentLocale);
+    };
+    window.addEventListener("pointermove", windowPointerMove);
+    window.addEventListener("pointerup", windowPointerUp);
+    window.addEventListener("pointercancel", windowPointerCancel);
+  });
+
+  thumb.addEventListener("lostpointercapture", () => {
+    if (!dragState) return;
+    detachWindowDragListeners();
+    dragState = null;
+    toggle.dataset.dragging = "0";
+    renderLocaleToggle(currentLocale);
+  });
+
+  toggle.addEventListener("click", (event) => {
+    event.preventDefault();
+  });
+
+  toggle.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+    }
+  });
+
+  scheduleLocaleToggleLiquidFilterRebuild(0);
 }
 
 function findSectionByTitle(keyword) {
@@ -1574,27 +2522,32 @@ function findSectionByTitle(keyword) {
   });
 }
 
-function getSidebarProfile(doc = {}, personal = {}) {
+function getSidebarProfile(doc = {}, personal = {}, locale = currentLocale) {
   const sidebar = doc.sidebar_profile || {};
+  const strings = getLocaleStrings(locale);
   return {
-    name: pick(
+    name: pickLocalized(
+      locale,
+      sidebar.name_ko,
+      sidebar.name_en,
       sidebar.name,
       sidebar.name_ko,
       sidebar.name_en,
       personal.name_ko,
       personal.name_en,
-      "Your Name",
+      strings.defaults.name,
     ),
-    title: pick(sidebar.title, personal.title, "AI & Hardware Engineer"),
+    title: pick(sidebar.title, personal.title, strings.defaults.title),
     photo: pick(sidebar.photo, personal.photo),
     photo_life: pick(sidebar.photo_life, sidebar.photo_alt, "assets/bio/life.jpg"),
   };
 }
 
-function renderIdentity(doc = {}, personal = {}) {
-  const sidebarProfile = getSidebarProfile(doc, personal);
-  const displayName = pick(personal.name_ko, personal.name_en, sidebarProfile.name, "Your Name");
-  const title = pick(personal.title, sidebarProfile.title, "AI & Hardware Engineer");
+function renderIdentity(doc = {}, personal = {}, locale = currentLocale) {
+  const strings = getLocaleStrings(locale);
+  const sidebarProfile = getSidebarProfile(doc, personal, locale);
+  const displayName = pickLocalized(locale, personal.name_ko, personal.name_en, sidebarProfile.name, strings.defaults.name);
+  const title = pick(personal.title, sidebarProfile.title, strings.defaults.title);
   const affiliationLine = pick(joinWithDot([personal.affiliation, personal.department]), title);
 
   document.title = `${displayName} | ${title}`;
@@ -1736,12 +2689,13 @@ function startSidebarTyping(link, labels = SIDEBAR_SITE_LABELS) {
   tick();
 }
 
-function renderSidebarTopLink() {
+function renderSidebarTopLink(locale = currentLocale) {
   const link = qs("#sidebar-site-link");
   if (!link) return;
+  const strings = getLocaleStrings(locale);
   ensureSidebarTypingStyle();
   link.href = window.location.href.split("#")[0];
-  startSidebarTyping(link, SIDEBAR_SITE_LABELS);
+  startSidebarTyping(link, strings.siteLabels);
 }
 
 function renderAvatar(personal = {}, sidebarProfile = {}) {
@@ -1798,51 +2752,73 @@ function renderAvatar(personal = {}, sidebarProfile = {}) {
   }
 }
 
-function contactItem({ icon, text, href }) {
-  if (!isFilled(text)) return "";
-  if (isFilled(href)) {
-    return `
-      <li>
-        <a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">
-          <span class="c-icon">${icon}</span>
-          <span class="c-text">${escapeHtml(text)}</span>
-        </a>
-      </li>
-    `;
-  }
+function contactItem({ type, href, label, title = "" }) {
+  const iconMeta = CONTACT_ICON_SOURCES[type];
+  if (!iconMeta || !isFilled(href)) return "";
+
+  const safeHref = escapeHtml(href);
+  const safeLabel = escapeHtml(label || iconMeta.label);
+  const safeTitle = escapeHtml(title || label || iconMeta.label);
+  const externalAttrs =
+    /^https?:/i.test(href) ? ` target="_blank" rel="noopener noreferrer"` : "";
+
   return `
     <li>
-      <div class="nolink">
-        <span class="c-icon">${icon}</span>
-        <span class="c-text">${escapeHtml(text)}</span>
-      </div>
+      <a class="contact-icon-link" href="${safeHref}" aria-label="${safeLabel}" title="${safeTitle}"${externalAttrs}>
+        <span class="contact-icon-badge">
+          <img class="contact-icon-svg" src="${iconMeta.iconUrl}" alt="" decoding="async" referrerpolicy="no-referrer" />
+        </span>
+      </a>
     </li>
   `;
 }
 
-function renderContact(personal = {}) {
+function renderContact(personal = {}, locale = currentLocale) {
   const list = qs(".contact-list");
   if (!list) return;
+  const section = list.closest(".sb-section");
+  const strings = getLocaleStrings(locale);
 
   const email = pick(personal.email);
+  const phone = pick(personal.phone);
   const github = pick(personal.github);
   const linkedin = pick(personal.linkedin);
   const scholar = pick(personal.google_scholar);
   const orcid = pick(personal.orcid);
-  const location = pick(personal.location);
+  const cv = pick(personal.cv);
 
   const items = [
-    contactItem({ icon: "@", text: email, href: isFilled(email) ? `mailto:${email}` : "" }),
-    contactItem({ icon: "GH", text: isFilled(github) ? getDomainPath(github) : "", href: github }),
-    contactItem({ icon: "in", text: isFilled(linkedin) ? getDomainPath(linkedin) : "", href: linkedin }),
-    contactItem({ icon: "GS", text: isFilled(scholar) ? "Google Scholar" : "", href: scholar }),
-    contactItem({ icon: "ID", text: isFilled(orcid) ? "ORCID" : "", href: orcid }),
-    contactItem({ icon: "LOC", text: location, href: "" }),
+    contactItem({
+      type: "email",
+      href: isFilled(email) ? `mailto:${email}` : "",
+      label: `${strings.contact.email}: ${email}`,
+      title: email,
+    }),
+    contactItem({
+      type: "phone",
+      href: isFilled(phone) ? `tel:${phone.replace(/[^\d+]/g, "")}` : "",
+      label: `${strings.contact.phone}: ${phone}`,
+      title: phone,
+    }),
+    contactItem({
+      type: "github",
+      href: github,
+      label: strings.contact.github,
+      title: isFilled(github) ? getDomainPath(github) : strings.contact.github,
+    }),
+    contactItem({ type: "linkedin", href: linkedin, label: strings.contact.linkedin, title: strings.contact.linkedin }),
+    contactItem({
+      type: "google_scholar",
+      href: scholar,
+      label: strings.contact.googleScholar,
+      title: strings.contact.googleScholar,
+    }),
+    contactItem({ type: "orcid", href: orcid, label: strings.contact.orcid, title: strings.contact.orcid }),
+    contactItem({ type: "cv", href: cv, label: strings.contact.cv, title: strings.contact.cv }),
   ].filter(Boolean);
 
-  if (items.length > 0) {
-    list.innerHTML = items.join("\n");
-  }
+  list.innerHTML = items.join("\n");
+  if (section) section.style.display = items.length > 0 ? "" : "none";
 }
 
 function extractCoreSkills(doc = {}) {
@@ -1850,7 +2826,7 @@ function extractCoreSkills(doc = {}) {
   if (Array.isArray(doc.skills)) {
     doc.skills.forEach((group) => {
       const category = String(group?.category || "").toLowerCase();
-      if (category.includes("language")) return;
+      if (category.includes("language") || category.includes("tool")) return;
       const items = Array.isArray(group?.items) ? group.items : [];
       items.forEach((item) => {
         const name = typeof item === "string" ? item : item?.name;
@@ -1878,22 +2854,29 @@ function renderSkills(doc = {}) {
     .join("");
 }
 
-function renderLanguages(doc = {}) {
+function renderLanguages(doc = {}, locale = currentLocale) {
   const list = qs(".lang-list");
   if (!list) return;
-
-  const langCategory = (Array.isArray(doc.skills) ? doc.skills : []).find((group) =>
-    String(group?.category || "").toLowerCase().includes("language"),
-  );
-  const items = Array.isArray(langCategory?.items) ? langCategory.items : [];
-  if (items.length === 0) return;
+  const section = list.closest(".sb-section");
+  const configured = toNamedList(doc.languages);
+  const skillGroups = Array.isArray(doc.skills) ? doc.skills : [];
+  const fallbackCategory =
+    skillGroups.find((group) =>
+      String(group?.category || "").toLowerCase().includes("programming language"),
+    ) ??
+    skillGroups.find((group) => String(group?.category || "").toLowerCase().includes("language"));
+  const items = configured.length > 0 ? configured : toNamedList(fallbackCategory?.items);
+  if (items.length === 0) {
+    list.innerHTML = "";
+    if (section) section.style.display = "none";
+    return;
+  }
 
   const html = items
     .map((item) => {
-      const name = typeof item === "string" ? item : pick(item.name);
-      const levelRaw = typeof item === "string" ? "intermediate" : pick(item.level, "intermediate");
-      if (!isFilled(name)) return "";
-      const level = formatLevel(levelRaw);
+      const name = pick(item.name);
+      const levelRaw = pick(item.level, "intermediate");
+      const level = formatLevel(levelRaw, locale);
       return `
         <li class="lang-item">
           <div class="lang-row">
@@ -1907,7 +2890,28 @@ function renderLanguages(doc = {}) {
     .filter(Boolean)
     .join("\n");
 
-  if (html) list.innerHTML = html;
+  list.innerHTML = html;
+  if (section) section.style.display = "";
+}
+
+function renderTools(doc = {}) {
+  const box = qs(".tool-tags");
+  if (!box) return;
+  const section = box.closest(".sb-section");
+  const configured = toNamedList(doc.tools);
+  const fallbackCategory = (Array.isArray(doc.skills) ? doc.skills : []).find((group) =>
+    String(group?.category || "").toLowerCase().includes("tool"),
+  );
+  const items = configured.length > 0 ? configured : toNamedList(fallbackCategory?.items);
+
+  if (items.length === 0) {
+    box.innerHTML = "";
+    if (section) section.style.display = "none";
+    return;
+  }
+
+  box.innerHTML = items.map((item) => `<span class="tool-tag">${escapeHtml(item.name)}</span>`).join("");
+  if (section) section.style.display = "";
 }
 
 function renderExperience(doc = {}) {
@@ -1963,15 +2967,16 @@ function renderExperience(doc = {}) {
   list.innerHTML = html;
 }
 
-function renderEducation(doc = {}) {
+function renderEducation(doc = {}, locale = currentLocale) {
   const section = qs("#educations");
   if (!section) return;
   const list = qs(".overview-edu-list", section);
   if (!list) return;
+  const strings = getLocaleStrings(locale);
 
   const educations = Array.isArray(doc.education) ? doc.education : [];
   if (educations.length === 0) {
-    list.innerHTML = `<div class="overview-edu-item"><div class="overview-edu-detail">Education details will be added soon.</div></div>`;
+    list.innerHTML = `<div class="overview-edu-item"><div class="overview-edu-detail">${escapeHtml(strings.overview.empty)}</div></div>`;
     return;
   }
 
@@ -1979,21 +2984,25 @@ function renderEducation(doc = {}) {
     .map((ed) => {
       const degree = pick(ed.degree);
       const major = pick(ed.major);
-      const degreeLine = major ? `${degree} in ${major}` : degree || "Degree";
-      const institution = pick(ed.institution, ed.institution_full, "Institution");
-      const period = formatPeriod(ed.period_start, ed.period_end);
-
-      const detail = pick(
-        isFilled(ed.thesis_title) ? `Thesis: "${ed.thesis_title}"` : "",
-        isFilled(ed.gpa) ? `GPA ${ed.gpa} / ${pick(ed.gpa_scale)}` : "",
-        ed.description,
-      );
+      const degreeLine =
+        normalizeLocale(locale) === "ko"
+          ? pick(joinWithSpace([major, degree]), degree, major, strings.defaults.degree)
+          : major
+            ? `${degree} in ${major}`
+            : degree || strings.defaults.degree;
+      const institution = pick(ed.institution, ed.institution_full, strings.defaults.institution);
+      const period = formatMonthPeriod(ed.period_start, ed.period_end, locale);
+      const thesisLine = isFilled(ed.thesis_title) ? `${strings.overview.thesis}: "${ed.thesis_title}"` : "";
+      const gpaLine = isFilled(ed.gpa) ? `${strings.overview.gpa} ${ed.gpa} / ${pick(ed.gpa_scale)}` : "";
+      const descriptionLine = pick(ed.description);
 
       return `
         <div class="overview-edu-item">
           <div class="overview-edu-period">${escapeHtml(period)}</div>
-          <div class="overview-edu-main">${escapeHtml(`${degreeLine} · ${institution}`)}</div>
-          ${isFilled(detail) ? `<div class="overview-edu-detail">${escapeHtml(detail)}</div>` : ""}
+          <div class="overview-edu-main">${escapeHtml(`${degreeLine} / ${institution}`)}</div>
+          ${isFilled(thesisLine) ? `<div class="overview-edu-detail">${escapeHtml(thesisLine)}</div>` : ""}
+          ${isFilled(gpaLine) ? `<div class="overview-edu-detail">${escapeHtml(gpaLine)}</div>` : ""}
+          ${isFilled(descriptionLine) ? `<div class="overview-edu-detail">${escapeHtml(descriptionLine)}</div>` : ""}
         </div>
       `;
     })
@@ -2002,24 +3011,79 @@ function renderEducation(doc = {}) {
   list.innerHTML = html;
 }
 
-function buildPublicationCards(doc = {}) {
+function renderOverviewStats(doc = {}, locale = currentLocale) {
+  const section = qs("#educations");
+  if (!section) return;
+  const box = qs(".overview-edu-stats", section);
+  if (!box) return;
+  const strings = getLocaleStrings(locale);
+
+  const stats = [
+    {
+      label: strings.nav.publications,
+      value: Array.isArray(doc.publications) ? doc.publications.length : 0,
+      kind: "publications",
+      target: "publications",
+    },
+    {
+      label: strings.nav.patents,
+      value: Array.isArray(doc.patents) ? doc.patents.length : 0,
+      kind: "patents",
+      target: "patents",
+    },
+    {
+      label: strings.nav.projects,
+      value: Array.isArray(doc.projects) ? doc.projects.length : 0,
+      kind: "projects",
+      target: "projects",
+    },
+  ];
+
+  box.innerHTML = stats
+    .map(
+      ({ label, value, kind, target }) => `
+        <button type="button" class="overview-edu-stat overview-edu-stat-${kind}" data-target="${escapeHtml(target)}" aria-label="${escapeHtml(sectionJumpAria(label, locale))}">
+          <div class="overview-edu-stat-label">${escapeHtml(label)}</div>
+          <div class="overview-edu-stat-value">${escapeHtml(String(value).padStart(2, "0"))}</div>
+        </button>
+      `,
+    )
+    .join("\n");
+
+  qsa(".overview-edu-stat[data-target]", box).forEach((card) => {
+    if (card.dataset.navBound === "1") return;
+    card.dataset.navBound = "1";
+    card.addEventListener("click", () => {
+      navigateToSectionId(card.dataset.target);
+    });
+  });
+}
+
+function buildPublicationCards(doc = {}, locale = currentLocale) {
   const publications = Array.isArray(doc.publications) ? doc.publications : [];
   const personal = doc.personal || {};
+  const strings = getLocaleStrings(locale);
   const total = publications.length;
 
   return publications.map((pub, index) => {
-    const venue = pick(pub.conference, pub.journal, pub.conference_abbr, pub.journal_abbr, "Publication");
+    const venue = pick(
+      pub.conference,
+      pub.journal,
+      pub.conference_abbr,
+      pub.journal_abbr,
+      strings.defaults.publication,
+    );
     const year = pick(pub.year);
     const title = pick(pub.title, "Untitled");
     const link = pick(pub.project_page, pub.pdf, pub.arxiv, pub.code, pub.video, pub.slides);
-    const linkLabel = pub.code && link === pub.code ? "GitHub" : "Read more";
+    const linkLabel = pub.code && link === pub.code ? strings.contact.github : strings.placeholders.readMore;
     const authorsHtml = formatAuthorsHtml(pick(pub.authors, pub.author), personal);
     const statusRaw = String(pub.status || "").toLowerCase().trim();
     const isUnderReview = statusRaw.includes("under_review") || statusRaw.includes("under review");
     const venueClass = `pub-venue${isUnderReview ? " pub-venue-under-review" : ""}`;
     const indexLabel = publicationIndexLabel(pub);
     const indexClass = indexLabel === "SCI" ? "pub-index pub-index-sci" : "pub-index pub-index-kci";
-    const statusLabel = publicationStatusLabel(pub.status);
+    const statusLabel = publicationStatusLabel(pub.status, locale);
     const noteText = pick(pub.note);
     const noteKey = normalizeNameKey(noteText);
     const statusKey = normalizeNameKey(statusLabel);
@@ -2048,7 +3112,7 @@ function buildPublicationCards(doc = {}) {
     const sciCardClass = indexLabel === "SCI" ? " pub-card-sci" : "";
 
     return `
-      <div class="pub-card pub-card-indexed${sciCardClass}">
+      <div class="pub-card pub-card-publication pub-card-indexed${sciCardClass}">
         <span class="pub-serial-mark" aria-hidden="true">${escapeHtml(serialLabel)}</span>
         <div class="pub-meta">
           <span class="${venueClass}">${escapeHtml(venue)}</span>
@@ -2065,21 +3129,26 @@ function buildPublicationCards(doc = {}) {
   });
 }
 
-function buildProjectCards(doc = {}) {
+function buildProjectCards(doc = {}, locale = currentLocale) {
   const projects = Array.isArray(doc.projects) ? doc.projects : [];
+  const strings = getLocaleStrings(locale);
 
-  return projects.map((project) => {
-    const year = pick(project.period_start).slice(0, 4);
-    const title = pick(project.title, "Project");
+  return projects.map((project, index) => {
+    const period = formatMonthPeriod(project.period_start, project.period_end, locale);
+    const title = pick(project.title, strings.defaults.project);
     const description = pick(project.description, summarizeText((project.highlights || []).join(" "), 220));
     const link = pick(project.link, project.github);
-    const linkLabel = project.github && link === project.github ? "GitHub" : "Project page";
+    const linkLabel = project.github && link === project.github ? strings.contact.github : strings.placeholders.projectPage;
+    const semiconductorClass = isSemiconductorProject(project) ? " pub-card-project-semiconductor" : "";
+    const fundingLabel = pick(project.funding, strings.defaults.project);
+    const serialLabel = String(projects.length - index).padStart(2, "0");
 
     return `
-      <div class="pub-card">
+      <div class="pub-card pub-card-project pub-card-indexed${semiconductorClass}">
+        <span class="pub-serial-mark" aria-hidden="true">${escapeHtml(serialLabel)}</span>
         <div class="pub-meta">
-          <span class="pub-venue">Project</span>
-          <span class="pub-year">${escapeHtml(year)}</span>
+          <span class="pub-venue">${escapeHtml(fundingLabel)}</span>
+          <span class="pub-year">${escapeHtml(period)}</span>
         </div>
         <div class="pub-title">${escapeHtml(title)}</div>
         <p class="pub-desc">${escapeHtml(summarizeText(description, 240))}</p>
@@ -2093,32 +3162,40 @@ function buildProjectCards(doc = {}) {
   });
 }
 
-function buildPatentCards(doc = {}) {
+function buildPatentCards(doc = {}, locale = currentLocale) {
   const patents = Array.isArray(doc.patents) ? doc.patents : [];
-  const typeMap = { domestic: "Korea", international: "International", pct: "PCT" };
+  const strings = getLocaleStrings(locale);
+  const typeMap = strings.patentType;
+  const total = patents.length;
 
-  return patents.map((patent) => {
+  return patents.map((patent, index) => {
     const typeRaw = String(patent.type || "").toLowerCase();
-    const venue = pick(typeMap[typeRaw], patent.country, "Patent");
+    const venue = pick(typeMap[typeRaw], patent.country, strings.defaults.patent);
     const yearSource = pick(patent.registration_date, patent.filing_date);
     const year = pick(String(yearSource).slice(0, 4));
-    const title = pick(patent.title_en, patent.title, "Patent");
+    const title =
+      normalizeLocale(locale) === "ko"
+        ? pick(patent.title, patent.title_en, strings.defaults.patent)
+        : pick(patent.title_en, patent.title, strings.defaults.patent);
     const description = pick(
       patent.description,
-      Array.isArray(patent.inventors) ? `Inventors: ${patent.inventors.join(", ")}` : "",
+      Array.isArray(patent.inventors) ? `${strings.placeholders.inventors}: ${patent.inventors.join(", ")}` : "",
       patent.application_number,
     );
-    const statusLabel = patentStatusLabel(patent.status);
+    const statusLabel = patentStatusLabel(patent.status, locale);
+    const serialLabel = String(total - index).padStart(2, "0");
+    const foreignPatentClass = isForeignPatent(patent) ? " pub-card-patent-foreign" : "";
 
     return `
-      <div class="pub-card">
+      <div class="pub-card pub-card-patent pub-card-indexed${foreignPatentClass}">
+        <span class="pub-serial-mark" aria-hidden="true">${escapeHtml(serialLabel)}</span>
         <div class="pub-meta">
           <span class="pub-venue">${escapeHtml(venue)}</span>
           <span class="pub-year">${escapeHtml(year)}</span>
           ${isFilled(statusLabel) ? `<span class="pub-index pub-index-kci">${escapeHtml(statusLabel)}</span>` : ""}
         </div>
         <div class="pub-title">${escapeHtml(title)}</div>
-        <p class="pub-desc">${escapeHtml(summarizeText(description, 240))}</p>
+        <p class="pub-desc">${escapeHtml(description)}</p>
       </div>
     `;
   });
@@ -2132,91 +3209,110 @@ function placeholderCard(message) {
   `;
 }
 
-function renderPublications(doc = {}) {
+function renderPublications(doc = {}, locale = currentLocale) {
   const section = qs("#publications") || findSectionByTitle("publication");
   if (!section) return;
   const list = qs(".pub-list", section);
   if (!list) return;
   const heading = qs(".sec-head h2", section);
+  const strings = getLocaleStrings(locale);
 
-  const cards = buildPublicationCards(doc);
+  const cards = buildPublicationCards(doc, locale);
   if (heading) {
-    heading.textContent = `Publications (${cards.length})`;
+    heading.textContent = `${strings.nav.publications} (${cards.length})`;
   }
   list.innerHTML =
-    cards.length > 0 ? cards.join("\n") : placeholderCard("Publications will be added soon.");
+    cards.length > 0 ? cards.join("\n") : placeholderCard(strings.placeholders.publications);
 }
 
-function renderPatents(doc = {}) {
+function renderPatents(doc = {}, locale = currentLocale) {
   const section = qs("#patents") || findSectionByTitle("patent");
   if (!section) return;
   const list = qs(".patent-list", section);
   if (!list) return;
+  const heading = qs(".sec-head h2", section);
+  const strings = getLocaleStrings(locale);
 
-  const cards = buildPatentCards(doc);
-  list.innerHTML = cards.length > 0 ? cards.join("\n") : placeholderCard("No patents listed yet.");
+  const cards = buildPatentCards(doc, locale);
+  if (heading) {
+    heading.textContent = `${strings.nav.patents} (${cards.length})`;
+  }
+  list.innerHTML = cards.length > 0 ? cards.join("\n") : placeholderCard(strings.placeholders.patents);
 }
 
-function renderProjects(doc = {}) {
+function renderProjects(doc = {}, locale = currentLocale) {
   const section = qs("#projects") || findSectionByTitle("project");
   if (!section) return;
   const list = qs(".project-list", section);
   if (!list) return;
+  const heading = qs(".sec-head h2", section);
+  const strings = getLocaleStrings(locale);
 
-  const cards = buildProjectCards(doc);
-  list.innerHTML = cards.length > 0 ? cards.join("\n") : placeholderCard("Projects will be added soon.");
+  const cards = buildProjectCards(doc, locale);
+  if (heading) {
+    heading.textContent = `${strings.nav.projects} (${cards.length})`;
+  }
+  list.innerHTML = cards.length > 0 ? cards.join("\n") : placeholderCard(strings.placeholders.projects);
 }
 
-function renderCV(doc = {}, personal = {}) {
+function renderCV(doc = {}, personal = {}, locale = currentLocale) {
   const section = qs("#cv") || findSectionByTitle("cv");
   if (!section) return;
   const list = qs(".cv-list", section);
   if (!list) return;
+  const strings = getLocaleStrings(locale);
 
   const cvLink = pick(personal.cv, doc.cv);
   if (!isFilled(cvLink)) {
-    list.innerHTML = placeholderCard("CV link is not set yet.");
+    list.innerHTML = placeholderCard(strings.placeholders.cvMissing);
     return;
   }
 
   list.innerHTML = `
     <div class="pub-card">
       <div class="pub-meta">
-        <span class="pub-venue">Resume</span>
+        <span class="pub-venue">${escapeHtml(strings.placeholders.cvVenue)}</span>
       </div>
-      <div class="pub-title">Curriculum Vitae</div>
-      <p class="pub-desc">Open the latest CV document.</p>
-      <a class="pub-link" href="${escapeHtml(cvLink)}" target="_blank" rel="noopener noreferrer">Open CV</a>
+      <div class="pub-title">${escapeHtml(strings.placeholders.cvTitle)}</div>
+      <p class="pub-desc">${escapeHtml(strings.placeholders.cvDescription)}</p>
+      <a class="pub-link" href="${escapeHtml(cvLink)}" target="_blank" rel="noopener noreferrer">${escapeHtml(strings.placeholders.openCv)}</a>
     </div>
   `;
 }
 
-function render(doc = {}) {
-  const orderedSections = ensureMainSectionStructure();
+function render(doc = {}, locale = currentLocale) {
+  currentLocale = normalizeLocale(locale);
+  const orderedSections = ensureMainSectionStructure(currentLocale);
   applyFonts(doc);
+  bindLocaleToggle();
+  renderLocaleToggle(currentLocale);
+  renderSidebarLabels(currentLocale);
+  document.documentElement.lang = getLocaleStrings(currentLocale).locale;
 
   const personal = doc.personal || {};
-  const sidebarProfile = getSidebarProfile(doc, personal);
-  renderIdentity(doc, personal);
-  renderSidebarTopLink();
+  const sidebarProfile = getSidebarProfile(doc, personal, currentLocale);
+  renderIdentity(doc, personal, currentLocale);
+  renderSidebarTopLink(currentLocale);
   renderAvatar(personal, sidebarProfile);
-  renderContact(personal);
+  renderContact(personal, currentLocale);
   renderSkills(doc);
-  renderLanguages(doc);
-  renderEducation(doc);
-  renderPublications(doc);
-  renderPatents(doc);
-  renderProjects(doc);
-  renderCV(doc, personal);
-  renderNavigator(orderedSections);
+  renderLanguages(doc, currentLocale);
+  renderTools(doc);
+  renderEducation(doc, currentLocale);
+  renderOverviewStats(doc, currentLocale);
+  renderPublications(doc, currentLocale);
+  renderPatents(doc, currentLocale);
+  renderProjects(doc, currentLocale);
+  renderCV(doc, personal, currentLocale);
+  renderNavigator(orderedSections, currentLocale);
 }
 
 async function boot() {
   try {
     resetInitialViewport();
     await ensureYamlLib();
-    const doc = await loadDoc();
-    render(doc);
+    currentLocale = detectInitialLocale();
+    await applyLocale(currentLocale, { resetViewport: false, persist: false });
     resetInitialViewport();
   } catch (error) {
     console.error("[portfolio] YAML binding failed:", error);
