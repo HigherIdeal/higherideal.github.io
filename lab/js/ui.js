@@ -1,9 +1,9 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=29";
-import { naturalKorean } from "./engine.js?v=29";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=29";
-import { solveProjectedLayout } from "./layout.js?v=29";
-import { mountTable } from "./table3d.js?v=29";
-import { stampURL } from "./stamp.js?v=29";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=30";
+import { naturalKorean } from "./engine.js?v=30";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=30";
+import { solveProjectedLayout } from "./layout.js?v=30";
+import { mountTable } from "./table3d.js?v=30";
+import { stampURL } from "./stamp.js?v=30";
 
 const ui = {
   selected: null,
@@ -366,6 +366,7 @@ function seatHtml(p, view) {
       <span class="who">
         <span class="bullets" aria-label="생명 ${p.hp}/${p.maxHp}">${bullets(p.id, p.hp, p.maxHp)}</span>
         <strong>${esc(p.nickname)}</strong>
+        <span class="hand-count">${p.handCount || 0}장</span>
       </span>
     </button>
   </div>`;
@@ -1180,7 +1181,7 @@ function syncTable(app, view) {
           return;
         }
         if (info?.kind === "hand" && info.secret) {
-          openCardZoom(info.image, info.box, { backs: info.handCount || 1, caption: `${info.handCount || 0}장` });
+          openCardZoom("", info.box, { backs: 1, caption: `${info.handCount || 0}장` });
           return;
         }
         if (info?.kind === "hand" && info.handId) {

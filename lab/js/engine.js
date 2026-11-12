@@ -9,8 +9,8 @@ import {
   cardLabel,
   characterById,
   rolesForCount,
-} from "./cards.js?v=29";
-import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=29";
+} from "./cards.js?v=30";
+import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=30";
 
 const WEAPONS = new Set(WEAPON_TYPES);
 

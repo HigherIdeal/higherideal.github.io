@@ -1,7 +1,7 @@
-import * as THREE from "../vendor/three.module.js?v=29";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=29";
-import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=29";
-import { stampCanvas } from "./stamp.js?v=29";
+import * as THREE from "../vendor/three.module.js?v=30";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=30";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=30";
+import { stampCanvas } from "./stamp.js?v=30";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -334,7 +334,7 @@ export function mountTable(canvas) {
       const role = player.role && ROLES[player.role];
       put(zone("character"), loadTexture(character?.image, textures) || back, player.id, mode);
       put(zone("role"), role ? loadTexture(role.image, textures) : back, player.id, mode);
-      if (player.id !== mine) placeHandFan(player, zone("character"), mode);
+      if (player.id !== mine) placeHandFan(player, zone("character"));
       placeGear(player, zone("gear"), mode, player.id === mine ? zone("character") : null);
       const anchor = zone("character");
       if (anchor?.world && reach) {
@@ -374,32 +374,32 @@ export function mountTable(canvas) {
     groups.__order = ordered.map((player) => player.id);
   }
 
-  function placeHandFan(player, anchor, mode) {
+  function placeHandFan(player, anchor) {
     const count = player.handCount || 0;
-    const shown = Math.min(count, 6);
+    const shown = Math.min(count, 10);
     if (!shown || !anchor?.world) return;
     const span = Math.hypot(anchor.world.x, anchor.world.z) || 1;
-    const outX = anchor.world.x / span;
-    const outZ = anchor.world.z / span;
-    const rightX = -outZ;
-    const rightZ = outX;
-    const cardW = anchor.world.w * 0.55;
-    const cardD = anchor.world.d * 0.55;
-    const out = anchor.world.d * 1.25;
+    const inX = -anchor.world.x / span;
+    const inZ = -anchor.world.z / span;
+    const rightX = -inZ;
+    const rightZ = inX;
+    const cardW = anchor.world.w * 0.42;
+    const cardD = anchor.world.d * 0.42;
+    const step = cardW * (shown > 6 ? 0.26 : 0.38);
+    const inward = anchor.world.d * 0.72;
     for (let i = 0; i < shown; i += 1) {
-      const texture = back;
-      const mesh = cardMesh(texture, cardW, cardD, mode);
-      const along = (i - (shown - 1) / 2) * cardW * 0.34;
+      const mesh = cardMesh(back, cardW, cardD, "self");
+      const along = (i - (shown - 1) / 2) * step;
       mesh.position.set(
-        anchor.world.x + outX * out + rightX * along,
-        0.045 + i * 0.006,
-        anchor.world.z + outZ * out + rightZ * along,
+        anchor.world.x + inX * inward + rightX * along,
+        0.14 + i * 0.008,
+        anchor.world.z + inZ * inward + rightZ * along,
       );
       mesh.rotation.order = "YXZ";
-      mesh.rotation.y = cardYaw(anchor.world.x, anchor.world.z) + (i - (shown - 1) / 2) * 0.12;
+      mesh.rotation.y = cardYaw(anchor.world.x, anchor.world.z) + (i - (shown - 1) / 2) * 0.14;
       mesh.rotation.x = -Math.PI / 2;
       mesh.userData.kind = "hand";
-      mesh.userData.image = texture.userData?.url || "";
+      mesh.userData.image = back.userData?.url || back.image?.src || "";
       mesh.userData.playerId = player.id;
       mesh.userData.secret = true;
       mesh.userData.handCount = count;

@@ -703,8 +703,6 @@ body:has(.table-screen) { background: #000; }
 body:has(.board.is-webgl) #app { pointer-events: none; }
 body:has(.board.is-webgl) #app .topbar,
 body:has(.board.is-webgl) #app .topbar *,
-body:has(.board.is-webgl) #app .hand-dock,
-body:has(.board.is-webgl) #app .hand-dock *,
 body:has(.board.is-webgl) #app .ability-panel,
 body:has(.board.is-webgl) #app .ability-panel *,
 body:has(.board.is-webgl) #app .host-pass,
@@ -716,11 +714,15 @@ body:has(.board.is-webgl) #app .victory *,
 body:has(.board.is-webgl) #app .help,
 body:has(.board.is-webgl) #app .help * { pointer-events: auto; }
 .board.is-webgl .seat-btn,
+.board.is-webgl .hand-dock .bar-btn,
+.board.is-webgl .hand-dock .action-bar,
+body:has(.board.is-webgl) #app .hand-dock .stack.hand .card { pointer-events: auto; }
 .board.is-webgl .hand-dock,
-.board.is-webgl .hand-dock * { pointer-events: auto; }
+.board.is-webgl .hand-dock .stack,
 .board.is-webgl .hand-dock .stack-item,
-.board.is-webgl .hand-dock .card img { pointer-events: none; }
-.board.is-webgl .hand-dock .stack-item .card { pointer-events: auto; }
+.board.is-webgl .hand-dock .card img,
+body:has(.board.is-webgl) #app .hand-dock .stack,
+body:has(.board.is-webgl) #app .hand-dock .stack-item { pointer-events: none; }
 .board.is-webgl .felt { transform: none; }
 .board.is-webgl .seat,
 .board.is-webgl .self-tray {
@@ -786,6 +788,7 @@ body:has(.board.is-webgl) #app .help * { pointer-events: auto; }
   pointer-events: none;
 }
 #seat-labels { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
+.hand-count { font-size: 12px; letter-spacing: 0.04em; color: #ffe7a8; }
 #table-gl {
   position: fixed;
   inset: 0;
