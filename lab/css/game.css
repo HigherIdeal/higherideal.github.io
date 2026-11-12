@@ -548,7 +548,7 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   z-index: 3;
 }
 #zoom-layer .spread-sheet:not(.no-intro) .spread-card {
-  animation: spread-enter .4s cubic-bezier(.15,.86,.24,1) both;
+  animation: spread-enter .4s cubic-bezier(.15,.86,.24,1) backwards;
   animation-delay: calc(var(--spread-i) * 38ms);
 }
 @keyframes turn-glow {
