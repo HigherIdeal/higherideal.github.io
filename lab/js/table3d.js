@@ -1,6 +1,6 @@
-import * as THREE from "../vendor/three.module.js?v=14";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=14";
-import { solveTableLayout } from "./layout.js?v=14";
+import * as THREE from "../vendor/three.module.js?v=15";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=15";
+import { cameraRig, fitCard, solveProjectedLayout } from "./layout.js?v=15";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -58,7 +58,7 @@ export function mountTable(canvas) {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.02);
+  scene.fog = new THREE.FogExp2(0x000000, 0.012);
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 80);
   const hemi = new THREE.AmbientLight(0xfff4e4, 0.28);
   scene.add(hemi);
@@ -74,8 +74,26 @@ export function mountTable(canvas) {
   key.shadow.camera.bottom = -8;
   scene.add(key);
   const plane = new THREE.Mesh(
-    new THREE.PlaneGeometry(80, 80),
-    new THREE.MeshStandardMaterial({ color: 0x070605, roughness: 1, metalness: 0 }),
+    new THREE.PlaneGeometry(240, 240),
+    new THREE.ShaderMaterial({
+      vertexShader: `
+        varying vec3 vPos;
+        void main() {
+          vec4 world = modelMatrix * vec4(position, 1.0);
+          vPos = world.xyz;
+          gl_Position = projectionMatrix * viewMatrix * world;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vPos;
+        void main() {
+          float d = length(vPos.xz);
+          float fade = smoothstep(5.5, 14.0, d);
+          vec3 col = mix(vec3(0.055, 0.043, 0.032), vec3(0.0), fade);
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+    }),
   );
   plane.rotation.x = -Math.PI / 2;
   plane.receiveShadow = true;
@@ -97,28 +115,18 @@ export function mountTable(canvas) {
   let width = 1;
   let height = 1;
 
-  function aspectWide() {
-    return (canvas.clientWidth || 1) / Math.max(1, canvas.clientHeight || 1) > 1.35;
-  }
-
   function resize() {
-    const parent = canvas.parentElement;
-    if (!parent) return;
-    width = Math.max(1, parent.clientWidth);
-    height = Math.max(1, parent.clientHeight);
+    width = Math.max(1, window.innerWidth);
+    height = Math.max(1, window.innerHeight);
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     renderer.setPixelRatio(ratio);
     renderer.setSize(width, height, false);
-    const aspect = width / height;
-    camera.aspect = aspect;
-    camera.fov = 42;
-    const tilt = 50 * Math.PI / 180;
-    const radius = aspect > 1.35 ? 5.2 : 4.4;
-    const dist = aspect > 1.35 ? 6.15 : 7.6;
-    camera.position.set(0, Math.sin(tilt) * dist, Math.cos(tilt) * dist);
-    camera.lookAt(0, 0.15, 0);
+    const rig = cameraRig(width, height);
+    camera.aspect = rig.aspect;
+    camera.fov = rig.fov * 180 / Math.PI;
+    camera.position.set(rig.position.x, rig.position.y, rig.position.z);
+    camera.lookAt(rig.lookAt.x, rig.lookAt.y, rig.lookAt.z);
     camera.updateProjectionMatrix();
-    canvas.__bangRadius = radius;
   }
 
   function cardMesh(texture, w, h) {
@@ -140,66 +148,45 @@ export function mountTable(canvas) {
     const self = living.find((p) => p.id === next.yourId);
     const others = living.filter((p) => p.id !== next.yourId);
     const ordered = self ? [self, ...others] : living;
-    const layout = solveTableLayout(ordered.length);
+    const layout = solveProjectedLayout(width, height, ordered.length);
+    const rig = cameraRig(width, height);
+    const put = (zone, texture, playerId) => {
+      if (!zone || !texture) return;
+      const fit = fitCard(rig, zone, width, height);
+      if (!fit) return;
+      const mesh = cardMesh(texture, fit.w, fit.d);
+      mesh.position.set(fit.center.x, 0.03, fit.center.z);
+      mesh.userData.baseY = 0.03;
+      if (playerId) mesh.userData.playerId = playerId;
+      scene.add(mesh);
+      groups.set(zone.id, mesh);
+    };
     ordered.forEach((player, index) => {
-      const zone = layout.zones.find((item) => item.id === `seat-${index}`);
-      if (!zone) return;
-      const group = new THREE.Group();
-      const radius = canvas.__bangRadius || 4.4;
-      const spread = radius * (0.62 + Math.min(ordered.length, 7) * 0.035);
-      const angle = Math.PI * 0.5 + (Math.PI * 2 * index) / ordered.length;
-      const x = Math.cos(angle) * spread * (aspectWide() ? 1.35 : 1);
-      const z = Math.sin(angle) * spread * 0.48;
-      group.position.set(x, 0.02, z);
-      group.userData.playerId = player.id;
-      const reach = player.id !== next.yourId && player.connected !== false && player.distance != null && player.distance <= weaponRange(next);
-      group.userData.baseY = reach ? 0.28 : 0.02;
-      group.position.y = group.userData.baseY;
+      const zone = (kind) => layout.leaves.find((item) => item.seat === index && item.kind === kind);
       const character = characterById(player.character);
-      const faceW = radius * (ordered.length > 5 ? 0.3 : 0.42) * zone.scale;
-      const face = cardMesh(loadTexture(character?.image, textures), faceW, faceW * 1.48);
-      face.position.set(0, 0.01, 0);
-      face.userData.playerId = player.id;
-      group.add(face);
-      const gear = [player.equipment?.weapon, player.equipment?.barrel, player.equipment?.mustang, player.equipment?.scope, player.equipment?.jail, player.equipment?.dynamite].filter(Boolean);
-      gear.forEach((card, gearIndex) => {
-        const mesh = cardMesh(loadTexture(CARD_INFO[card.type]?.image, textures), faceW * 0.62, faceW * 0.9);
-        mesh.position.set(faceW * 0.72, 0.02 + gearIndex * 0.01, -0.2 + gearIndex * 0.22);
-        mesh.userData.playerId = player.id;
-        group.add(mesh);
-      });
       const role = player.role && ROLES[player.role];
-      const roleMesh = cardMesh(role ? loadTexture(role.image, textures) : back, faceW * 0.55, faceW * 0.8);
-      roleMesh.position.set(-faceW * 0.62, 0.015, 0.05);
-      roleMesh.userData.playerId = player.id;
-      group.add(roleMesh);
-      const backs = Math.min(player.handCount || 0, 6);
-      for (let n = 0; n < backs; n += 1) {
-        const pile = cardMesh(back, faceW * 0.48, faceW * 0.7);
-        pile.position.set(0.08, 0.03 + n * 0.015, faceW * 0.55);
-        pile.userData.playerId = player.id;
-        group.add(pile);
-      }
-      if (reach) {
-        const pool = new THREE.PointLight(0xffc48a, 1.4, 2.4, 2);
-        pool.position.set(x, 1.3, z);
+      put(zone("character"), loadTexture(character?.image, textures) || back, player.id);
+      put(zone("role"), role ? loadTexture(role.image, textures) : back, player.id);
+      if (player.id !== next.yourId) put(zone("hand"), back, player.id);
+      const eq = player.equipment || {};
+      put(zone("weapon"), eq.weapon ? loadTexture(CARD_INFO[eq.weapon.type]?.image, textures) : null, player.id);
+      const blue = eq.jail || eq.dynamite || eq.barrel || eq.mustang || eq.scope;
+      put(zone("jail"), blue ? loadTexture(CARD_INFO[blue.type]?.image, textures) : null, player.id);
+      if (eq.jail && eq.dynamite) put(zone("dynamite"), loadTexture(CARD_INFO[eq.dynamite.type]?.image, textures), player.id);
+      const reach = player.id !== next.yourId && player.connected !== false && player.distance != null && player.distance <= weaponRange(next);
+      const anchor = zone("character");
+      const fit = anchor && fitCard(rig, anchor, width, height);
+      if (fit && reach) {
+        const pool = new THREE.PointLight(0xffc48a, 1.6, 3.2, 2);
+        pool.position.set(fit.center.x, 1.4, fit.center.z);
         scene.add(pool);
         lights.set(player.id, pool);
       }
-      scene.add(group);
-      groups.set(player.id, group);
     });
-    const deck = layout.zones.find((item) => item.id === "deck");
-    if (deck && next.deckCount) {
-      const group = new THREE.Group();
-      const radius = canvas.__bangRadius || 4.4;
-      group.position.set(-radius * 0.22, 0.03, 0);
-      const mesh = cardMesh(back, radius * 0.28, radius * 0.4);
-      mesh.userData.kind = "deck";
-      group.add(mesh);
-      scene.add(group);
-      groups.set("deck", group);
-    }
+    if (next.deckCount) put(layout.deck, back, "");
+    if (next.discardTop) put(layout.discard, loadTexture(CARD_INFO[next.discardTop.type]?.image, textures), "");
+    groups.__layout = layout;
+    groups.__order = ordered.map((player) => player.id);
   }
 
   function weaponRange(next) {
@@ -227,7 +214,7 @@ export function mountTable(canvas) {
     requestAnimationFrame(tick);
     for (const group of groups.values()) {
       if (!group.userData.playerId) continue;
-      const lift = aimIds.has(group.userData.playerId) ? 0.55 : group.userData.baseY;
+      const lift = aimIds.has(group.userData.playerId) ? 0.16 : (group.userData.baseY || 0.03);
       group.position.y += (lift - group.position.y) * (reduced() ? 1 : 0.18);
     }
     renderer.render(scene, camera);
@@ -237,7 +224,16 @@ export function mountTable(canvas) {
     aimIds = new Set(aim || []);
     resize();
     rebuild(next);
-    return projectSeats();
+    const order = groups.__order || [];
+    const layout = groups.__layout;
+    if (!layout) return [];
+    return layout.leaves.filter((zone) => zone.kind === "label").map((zone) => ({
+      id: order[zone.seat],
+      x: zone.x,
+      y: zone.y,
+      w: zone.w,
+      h: zone.h,
+    }));
   }
 
   function pick(clientX, clientY) {

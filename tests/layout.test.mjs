@@ -1,14 +1,46 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { layoutOverlaps, solveTableLayout } from "../lab/js/layout.js";
+import { cameraRig, layoutOverlaps, projectPoint, projectedCards, solveProjectedLayout } from "../lab/js/layout.js";
 
-for (const count of [2, 3, 4, 5, 6, 7]) {
-  test(`table zones do not overlap for ${count} players`, () => {
-    const layout = solveTableLayout(count);
-    assert.equal(layoutOverlaps(layout.zones), false);
-    assert.ok(layout.scale > 0.2);
-    assert.ok(layout.zones.some((zone) => zone.kind === "deck"));
-    assert.ok(layout.zones.some((zone) => zone.kind === "discard"));
-    assert.equal(layout.zones.filter((zone) => zone.kind === "seat").length, count);
-  });
+const views = [
+  [412, 915],
+  [1888, 1000],
+];
+
+function overlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
+
+for (const [width, height] of views) {
+  for (const count of [2, 3, 4, 5, 6, 7]) {
+    test(`projected zones stay apart for ${count} players at ${width}x${height}`, () => {
+      const layout = solveProjectedLayout(width, height, count);
+      assert.equal(layout.leaves.filter((zone) => zone.kind === "character").length, count);
+      assert.equal(layoutOverlaps(layout.leaves), false);
+      const { cards } = projectedCards(width, height, count);
+      assert.ok(cards.every((card) => card.fit), `a card could not be placed at ${width}x${height}`);
+      const boxes = cards.map((card) => card.fit.screen);
+      for (let i = 0; i < boxes.length; i += 1) {
+        const zone = cards[i].zone;
+        assert.ok(boxes[i].x >= zone.x - 2 && boxes[i].y >= zone.y - 2);
+        assert.ok(boxes[i].x + boxes[i].w <= zone.x + zone.w + 2);
+        assert.ok(boxes[i].y + boxes[i].h <= zone.y + zone.h + 2);
+        for (let j = i + 1; j < boxes.length; j += 1) {
+          assert.equal(overlap(boxes[i], boxes[j]), false, `${cards[i].zone.kind} overlaps ${cards[j].zone.kind}`);
+        }
+      }
+      const label = layout.leaves.find((zone) => zone.kind === "label");
+      const character = layout.leaves.find((zone) => zone.kind === "character" && zone.seat === label.seat);
+      assert.equal(overlap(label, character), false);
+    });
+  }
+}
+
+test("the table origin projects to the middle of the view", () => {
+  const width = 1888;
+  const height = 1000;
+  const cam = cameraRig(width, height);
+  const point = projectPoint(cam, { x: 0, y: 0, z: 0 }, width, height);
+  assert.ok(Math.abs(point.x - width / 2) < 2);
+  assert.ok(Math.abs(point.y - height / 2) < 2);
+});

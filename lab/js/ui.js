@@ -1,8 +1,8 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=14";
-import { naturalKorean } from "./engine.js?v=14";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=14";
-import { solveTableLayout } from "./layout.js?v=14";
-import { mountTable } from "./table3d.js?v=14";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=15";
+import { naturalKorean } from "./engine.js?v=15";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=15";
+import { solveProjectedLayout } from "./layout.js?v=15";
+import { mountTable } from "./table3d.js?v=15";
 
 const ui = {
   selected: null,
@@ -957,11 +957,11 @@ function syncTable(app, view) {
   const board = app.querySelector(".board");
   const felt = board?.querySelector(".felt");
   if (!board || !felt || !view || (view.phase !== "play" && view.phase !== "end")) return;
-  let canvas = felt.querySelector("#table-gl");
+  let canvas = document.querySelector("#table-gl");
   if (!canvas) {
     canvas = document.createElement("canvas");
     canvas.id = "table-gl";
-    felt.prepend(canvas);
+    document.body.prepend(canvas);
     canvas.addEventListener("pointerdown", (event) => {
       const ctx = app.__ctx;
       if (!ui.gl?.pick || !ctx?.view || !ui.selected) return;
@@ -1000,41 +1000,24 @@ function placeFelt(felt, view, projected, webgl) {
   const living = view.players.filter((p) => p.alive !== false);
   const me = living.find((p) => p.id === view.yourId);
   const ordered = me ? [me, ...living.filter((p) => p.id !== me.id)] : living;
-  const layout = solveTableLayout(ordered.length);
-  const width = Math.max(felt.clientWidth, 1);
+  const layout = solveProjectedLayout(window.innerWidth, window.innerHeight, ordered.length);
   ordered.forEach((player, index) => {
     const node = felt.querySelector(player.id === view.yourId ? ".self-tray" : `.seat[data-player="${player.id}"]`);
     if (!node) return;
-    if (webgl && projected) {
-      const spot = projected.find((item) => item.id === player.id);
-      if (!spot) return;
-      const zone = layout.zones.find((item) => item.id === `seat-${index}`);
-      const seatW = Math.max(180, Math.min(width * 0.22, 340));
-      const seatH = Math.min(seatW * 1.05, felt.clientHeight * 0.42);
-      const top = Math.max(8, Math.min(spot.y - seatH * 0.35, felt.clientHeight - seatH - 8));
-      node.style.left = `${spot.x - seatW / 2}px`;
-      node.style.top = `${top}px`;
-      node.style.width = `${seatW}px`;
-      node.style.height = `${seatH}px`;
-      node.style.transform = "none";
-      return;
-    }
-    const zone = layout.zones.find((item) => item.id === `seat-${index}`);
-    if (!zone) return;
-    node.style.left = `${zone.x * 100}%`;
-    node.style.top = `${zone.y * 100}%`;
-    node.style.width = `${zone.w * 100}%`;
-    const depth = (0.5 - (zone.y + zone.h / 2)) * 260;
-    node.style.transform = `translateZ(${depth}px)`;
+    const spot = webgl && projected ? projected.find((item) => item.id === player.id) : layout.seats[index];
+    if (!spot) return;
+    node.style.left = `${spot.x}px`;
+    node.style.top = `${spot.y}px`;
+    node.style.width = `${spot.w}px`;
+    node.style.height = `${spot.h || 28}px`;
+    node.style.transform = "none";
   });
   const piles = felt.querySelector(".center-piles");
-  const deck = layout.zones.find((zone) => zone.kind === "deck");
-  const discard = layout.zones.find((zone) => zone.kind === "discard");
-  if (piles && deck && discard && !webgl) {
-    piles.style.left = `${deck.x * 100}%`;
-    piles.style.top = `${deck.y * 100}%`;
-    piles.style.width = `${(discard.x + discard.w - deck.x) * 100}%`;
-    piles.style.transform = "translateZ(40px)";
+  if (piles && layout.deck && !webgl) {
+    piles.style.left = `${layout.deck.x}px`;
+    piles.style.top = `${layout.deck.y}px`;
+    piles.style.width = `${layout.discard.x + layout.discard.w - layout.deck.x}px`;
+    piles.style.transform = "none";
   }
 }
 
