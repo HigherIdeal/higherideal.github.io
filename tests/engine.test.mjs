@@ -109,15 +109,65 @@ test("roles, sheriff bonus, private view, and first turn", () => {
   }
 });
 
-test("start requires 4 players and the host", () => {
+test("one player cannot start and a guest cannot start", () => {
   const state = createLobby({ id: "p0", nickname: "가" }, 1);
-  addPlayer(state, "p1", "나");
-  addPlayer(state, "p2", "다");
   assert.equal(dispatch(state, "p0", { type: "start" }).ok, false);
+  addPlayer(state, "p1", "나");
   assert.equal(dispatch(state, "p1", { type: "start" }).ok, false);
-  addPlayer(state, "p3", "라");
-  assert.match(addPlayer(state, "p3", "라").ok ? "dup" : "ok", /ok|dup/);
-  assert.equal(state.players.length, 4);
+});
+
+test("two players are sheriff and outlaw, and either kill wins", () => {
+  function shortTable(seed) {
+    const state = createLobby({ id: "a", nickname: "가" }, seed);
+    addPlayer(state, "b", "나");
+    assert.equal(dispatch(state, "a", { type: "start" }).ok, true);
+    assert.deepEqual(state.players.map((p) => p.role).sort(), ["outlaw", "sheriff"]);
+    for (const p of state.players) {
+      assert.equal(dispatch(state, p.id, { type: "choose", characterId: p.choices[0] }).ok, true);
+    }
+    drain(state);
+    return state;
+  }
+  const emptyEquip = () => ({ weapon: null, mustang: null, scope: null, barrel: null, jail: null, dynamite: null });
+  function strike(state, fromId, toId) {
+    const from = state.players.find((p) => p.id === fromId);
+    const to = state.players.find((p) => p.id === toId);
+    to.hp = 1;
+    to.hand = [];
+    to.equipment = emptyEquip();
+    from.character = "sid";
+    to.character = "sid";
+    from.hand.push(card(`bang-${fromId}`, "bang", "clubs", "5"));
+    state.currentId = fromId;
+    state.turnPhase = "play";
+    state.prompt = null;
+    state.bangsPlayed = 0;
+    const played = dispatch(state, fromId, { type: "play", cardId: `bang-${fromId}`, targetId: toId });
+    assert.equal(played.ok, true, played.error);
+    if (state.prompt?.kind === "miss") {
+      const taken = dispatch(state, toId, { type: "respond", choice: "take" });
+      assert.equal(taken.ok, true, taken.error);
+    }
+  }
+  const sheriffWins = shortTable(21);
+  const sheriff = sheriffWins.players.find((p) => p.role === "sheriff");
+  const outlaw = sheriffWins.players.find((p) => p.role === "outlaw");
+  strike(sheriffWins, sheriff.id, outlaw.id);
+  assert.equal(sheriffWins.phase, "end");
+  assert.equal(sheriffWins.winner.team, "sheriff");
+
+  const outlawWins = shortTable(22);
+  const sheriff2 = outlawWins.players.find((p) => p.role === "sheriff");
+  const outlaw2 = outlawWins.players.find((p) => p.role === "outlaw");
+  strike(outlawWins, outlaw2.id, sheriff2.id);
+  assert.equal(outlawWins.phase, "end");
+  assert.equal(outlawWins.winner.team, "outlaw");
+
+  const three = createLobby({ id: "a", nickname: "가" }, 4);
+  addPlayer(three, "b", "나");
+  addPlayer(three, "c", "다");
+  assert.equal(dispatch(three, "a", { type: "start" }).ok, true);
+  assert.deepEqual(three.players.map((p) => p.role).sort(), ["outlaw", "renegade", "sheriff"]);
 });
 
 test("distance, weapons, and one Bang per turn", () => {

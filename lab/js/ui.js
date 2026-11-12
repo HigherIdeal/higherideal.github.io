@@ -1,4 +1,4 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=9";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=10";
 
 const ui = {
   selected: null,
@@ -105,7 +105,7 @@ function lobbyHtml(ctx) {
   const me = view.players.find((p) => p.id === view.yourId);
   const count = view.players.length;
   const host = view.yourId === view.hostId;
-  const ready = count >= 4;
+  const ready = count >= 2;
   return `<main class="salon">
     <header class="topbar">
       <div class="brand-mini">BANG!</div>
@@ -114,7 +114,7 @@ function lobbyHtml(ctx) {
     </header>
     <section class="lobby">
       <h1>대기실</h1>
-      <p class="muted" data-count="${count}">${count}/7명 · 4명이 모이면 시작할 수 있습니다.</p>
+      <p class="muted" data-count="${count}">${count}/7명 · 2명이면 시작할 수 있습니다. 4명부터 정식 역할입니다.</p>
       <ol class="roster">
         ${view.players.map((p) => `<li data-player="${esc(p.id)}" data-presence="${p.connected ? "on" : "off"}">
           <span>${esc(p.nickname)}</span>
@@ -126,7 +126,7 @@ function lobbyHtml(ctx) {
         </li>`).join("")}
       </ol>
       ${host
-        ? `<button class="enter-btn" type="button" data-action="start" ${ready ? "" : "disabled"}>${ready ? "게임 시작" : `${count}명 · 4명부터`}</button>`
+        ? `<button class="enter-btn" type="button" data-action="start" ${ready ? "" : "disabled"}>${ready ? "게임 시작" : `${count}명 · 2명부터`}</button>`
         : `<p class="footnote">${esc(me?.nickname || "")} 님, 방장이 시작하기를 기다리는 중입니다.</p>`}
       <button class="text-btn" type="button" data-action="leave">나가기</button>
     </section>

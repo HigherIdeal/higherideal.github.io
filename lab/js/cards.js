@@ -130,6 +130,8 @@ export function cardLabel(card) {
 }
 
 export function rolesForCount(n) {
+  if (n === 2) return ["sheriff", "outlaw"];
+  if (n === 3) return ["sheriff", "outlaw", "renegade"];
   if (n === 4) return ["sheriff", "renegade", "outlaw", "outlaw"];
   if (n === 5) return ["sheriff", "deputy", "renegade", "outlaw", "outlaw"];
   if (n === 6) return ["sheriff", "deputy", "renegade", "outlaw", "outlaw", "outlaw"];
