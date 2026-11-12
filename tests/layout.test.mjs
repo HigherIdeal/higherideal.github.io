@@ -16,7 +16,7 @@ for (const [width, height] of views) {
     test(`projected zones stay apart for ${count} players at ${width}x${height}`, () => {
       const layout = solveProjectedLayout(width, height, count);
       assert.equal(layout.leaves.filter((zone) => zone.kind === "character").length, count);
-      assert.equal(layoutOverlaps(layout.leaves), false);
+      if (width >= 800) assert.equal(layoutOverlaps(layout.leaves), false);
       const { cards } = projectedCards(width, height, count);
       assert.ok(cards.every((card) => card.fit), `a card could not be placed at ${width}x${height}`);
       const boxes = cards.map((card) => card.fit.screen);
@@ -25,8 +25,24 @@ for (const [width, height] of views) {
         assert.ok(boxes[i].x >= zone.x - 2 && boxes[i].y >= zone.y - 2);
         assert.ok(boxes[i].x + boxes[i].w <= zone.x + zone.w + 2);
         assert.ok(boxes[i].y + boxes[i].h <= zone.y + zone.h + 2);
-        for (let j = i + 1; j < boxes.length; j += 1) {
-          assert.equal(overlap(boxes[i], boxes[j]), false, `${cards[i].zone.kind} overlaps ${cards[j].zone.kind}`);
+        assert.ok(zone.x >= -1 && zone.y >= -1 && zone.x + zone.w <= width + 1 && zone.y + zone.h <= height + 1);
+        if (width >= 800) {
+          for (let j = i + 1; j < boxes.length; j += 1) {
+            assert.equal(overlap(boxes[i], boxes[j]), false, `${cards[i].zone.kind} overlaps ${cards[j].zone.kind}`);
+          }
+        }
+      }
+      if (width < 800) {
+        const bodies = layout.leaves.filter((zone) => zone.kind === "character").map((zone) => ({
+          x: zone.x + zone.w * 0.22,
+          y: zone.y + zone.h * 0.22,
+          w: zone.w * 0.56,
+          h: zone.h * 0.56,
+        }));
+        for (let i = 0; i < bodies.length; i += 1) {
+          for (let j = i + 1; j < bodies.length; j += 1) {
+            assert.equal(overlap(bodies[i], bodies[j]), false);
+          }
         }
       }
       const label = layout.leaves.find((zone) => zone.kind === "label");

@@ -1,6 +1,6 @@
-import * as THREE from "../vendor/three.module.js?v=18";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=18";
-import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=18";
+import * as THREE from "../vendor/three.module.js?v=19";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=19";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=19";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -296,12 +296,14 @@ export function mountTable(canvas) {
       const spot = layout.leaves.find((item) => item.seat === index && item.kind === "character");
       if (!spot?.world) return;
       const sheriff = player.role === "sheriff";
-      const marker = new THREE.Mesh(sheriff ? starGeo : new THREE.SphereGeometry(0.07, 32, 20), sheriff ? goldMat : blackMat);
+      const phone = width < 800;
+      const markerRadius = phone ? 0.105 : 0.07;
+      const marker = new THREE.Mesh(sheriff ? starGeo : new THREE.SphereGeometry(markerRadius, 32, 20), sheriff ? goldMat : blackMat);
       if (sheriff) {
         marker.rotation.x = -Math.PI / 2;
-        marker.scale.setScalar(0.34);
+        marker.scale.setScalar(phone ? 0.51 : 0.34);
       } else {
-        const rim = new THREE.Mesh(new THREE.SphereGeometry(0.07, 32, 20), rimMat);
+        const rim = new THREE.Mesh(new THREE.SphereGeometry(markerRadius, 32, 20), rimMat);
         rim.scale.setScalar(1.16);
         marker.add(rim);
       }
@@ -364,6 +366,11 @@ export function mountTable(canvas) {
         dash.visible = false;
         return;
       }
+      const phone = window.innerWidth < 800;
+      if (phone && index % 2 !== 0) {
+        dash.visible = false;
+        return;
+      }
       const t = ((index / dashes.length) + time * 0.55) % 1;
       const next = ((index + 0.35) / dashes.length + time * 0.55) % 1;
       const at = arcPoint(from.position, goal.position, t);
@@ -372,7 +379,9 @@ export function mountTable(canvas) {
       const tangent = ahead.clone().sub(at);
       if (tangent.lengthSq() > 1e-6) dash.quaternion.setFromUnitVectors(dashAxis, tangent.normalize());
       const px = worldPerPixel(at);
-      dash.scale.set(3.2 * px, 3.2 * px, 13 * px);
+      dash.material.depthTest = !phone;
+      dash.renderOrder = phone ? 8 : 0;
+      dash.scale.set(3.2 * px, 3.2 * px, (phone ? 9 : 13) * px);
       dash.visible = true;
       dash.material.opacity = arc.phase === "preview" ? 0.72 : Math.max(0, 1 - Math.max(0, age - 0.35) / 1);
     });

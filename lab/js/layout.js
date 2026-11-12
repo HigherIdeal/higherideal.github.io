@@ -32,8 +32,9 @@ function norm(a) {
 export function cameraRig(width, height) {
   const aspect = width / Math.max(1, height);
   const fov = 46 * Math.PI / 180;
-  const tilt = (aspect > 1.2 ? 56 : 62) * Math.PI / 180;
-  const dist = aspect > 1.2 ? 5.8 : 5.4;
+  const phone = aspect <= 1.2;
+  const tilt = (phone ? 64 : 56) * Math.PI / 180;
+  const dist = phone ? 4.7 : 5.8;
   return {
     fov,
     aspect,
@@ -147,9 +148,10 @@ export function placeLayout(width, height, count, cardW, radiusScale = 1) {
   const farBox = orientedBox(cam, farWorld, cardW, cardD, width, height);
   const sideBox = orientedBox(cam, sideWorld, cardW, cardD, width, height);
   if (!nearBox || !farBox || !sideBox) return null;
-  const sideInset = sideBox.w / 2 + (width >= 800 ? 14 : 6);
-  const topInset = farBox.h / 2 + 10;
-  const botInset = nearBox.h / 2 + 28;
+  const phone = width < 800;
+  const sideInset = sideBox.w / 2 + (phone ? 1 : 14);
+  const topInset = farBox.h / 2 + (phone ? 4 : 10);
+  const botInset = nearBox.h / 2 + (phone ? 16 : 28);
   const availW = play.w - sideInset * 2;
   const availH = play.h - topInset - botInset;
   if (availW < 48 || availH < 48) return null;
@@ -250,27 +252,34 @@ export function placeLayout(width, height, count, cardW, radiusScale = 1) {
     const deckD = deckW * 1.45;
     const sample = boxOf(cam, { x: deckWorld.x, y: 0.02, z: deckWorld.z }, deckW, deckD, width, height);
     if (!sample) continue;
-    const left = screenToTable(cam, cx - sample.w / 2 - 6, cy, width, height);
-    const right = screenToTable(cam, cx + sample.w / 2 + 6, cy, width, height);
-    if (!left || !right) continue;
-    const deckCenter = { x: left.x, y: 0.02, z: left.z };
-    const discardCenter = { x: right.x, y: 0.02, z: right.z };
+    const phoneDeck = width < 800;
+    const deckPoint = phoneDeck
+      ? screenToTable(cam, cx, cy, width, height)
+      : screenToTable(cam, cx - sample.w / 2 - 6, cy, width, height);
+    const discardPoint = phoneDeck
+      ? screenToTable(cam, cx, cy + sample.h + 8, width, height)
+      : screenToTable(cam, cx + sample.w / 2 + 6, cy, width, height);
+    if (!deckPoint || !discardPoint) continue;
+    const deckCenter = { x: deckPoint.x, y: 0.02, z: deckPoint.z };
+    const discardCenter = { x: discardPoint.x, y: 0.02, z: discardPoint.z };
     const deckBox = boxOf(cam, deckCenter, deckW, deckD, width, height);
     const discardBox = boxOf(cam, discardCenter, deckW, deckD, width, height);
     if (!deckBox || !discardBox) continue;
     const trialDeck = { id: "deck", kind: "deck", ...deckBox, world: { ...deckCenter, w: deckW, d: deckD } };
     const trialDiscard = { id: "discard", kind: "discard", ...discardBox, world: { ...discardCenter, w: deckW, d: deckD } };
     const gap = portion <= 0.18 ? 0 : 4;
-    const crowded = leaves.some((zone) => rectsOverlap(zone, trialDeck, gap) || rectsOverlap(zone, trialDiscard, gap))
+    const crowded = leaves.some((zone) => (phoneDeck ? zone.kind !== "label" : true) && (rectsOverlap(zone, trialDeck, gap) || rectsOverlap(zone, trialDiscard, gap)))
       || rectsOverlap(trialDeck, trialDiscard, gap);
-    if (!crowded) {
+    if (!crowded && (!phoneDeck || deckBox.w >= 44)) {
       deck = trialDeck;
       discard = trialDiscard;
       break;
     }
   }
   if (!deck) {
-    if (globalThis.__WHY) console.log("nodeck", leaves.length);
+    if (globalThis.__WHY) {
+      console.log("nodeck", leaves.filter((zone) => zone.kind === "character").map((zone) => `${zone.seat}:${Math.round(zone.x)},${Math.round(zone.y)},${Math.round(zone.w)}x${Math.round(zone.h)}`).join(" | "));
+    }
     return null;
   }
   leaves.push(deck, discard);
@@ -297,9 +306,41 @@ export function placeLayout(width, height, count, cardW, radiusScale = 1) {
   return { seats, leaves, deck, discard, scale: cardW, play, deckCenter: { x: cx, y: cy } };
 }
 
+function worldSeparated(a, b) {
+  if (!a.world || !b.world) return true;
+  const axesOf = (world) => {
+    const span = Math.hypot(world.x, world.z) || 1;
+    const ux = -world.x / span;
+    const uz = -world.z / span;
+    return { rx: uz, rz: -ux, ux, uz, w: world.w, d: world.d, x: world.x, z: world.z };
+  };
+  const A = axesOf(a.world);
+  const B = axesOf(b.world);
+  const dx = B.x - A.x;
+  const dz = B.z - A.z;
+  for (const [x, z] of [[A.rx, A.rz], [A.ux, A.uz], [B.rx, B.rz], [B.ux, B.uz]]) {
+    const dist = Math.abs(dx * x + dz * z);
+    const ra = Math.abs(A.rx * x + A.rz * z) * A.w / 2 + Math.abs(A.ux * x + A.uz * z) * A.d / 2;
+    const rb = Math.abs(B.rx * x + B.rz * z) * B.w / 2 + Math.abs(B.ux * x + B.uz * z) * B.d / 2;
+    if (dist > ra + rb + 0.004) return true;
+  }
+  return false;
+}
+
+function phoneFits(leaves) {
+  const cards = leaves.filter((zone) => zone.world && zone.kind !== "label" && zone.kind !== "deck" && zone.kind !== "discard");
+  for (let i = 0; i < cards.length; i += 1) {
+    for (let j = i + 1; j < cards.length; j += 1) {
+      if (!worldSeparated(cards[i], cards[j])) return false;
+    }
+  }
+  return true;
+}
+
 export function solveProjectedLayout(width, height, playerCount) {
   const count = Math.max(1, Math.min(7, playerCount));
   const play = playField(width, height);
+  const phone = width < 800;
   let best = null;
   for (let radius = 100; radius >= 86; radius -= 2) {
     const radiusScale = radius / 100;
@@ -309,7 +350,8 @@ export function solveProjectedLayout(width, height, playerCount) {
     for (let step = 0; step < 14; step += 1) {
       const mid = (lo + hi) / 2;
       const laid = placeLayout(width, height, count, mid, radiusScale);
-      if (laid && !layoutOverlaps(laid.leaves, 2)) {
+      const clear = laid && (phone ? phoneFits(laid.leaves) : !layoutOverlaps(laid.leaves, 2));
+      if (clear) {
         fit = laid;
         lo = mid;
       } else hi = mid;

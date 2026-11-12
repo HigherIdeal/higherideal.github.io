@@ -1,8 +1,8 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=18";
-import { naturalKorean } from "./engine.js?v=18";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=18";
-import { solveProjectedLayout } from "./layout.js?v=18";
-import { mountTable } from "./table3d.js?v=18";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=19";
+import { naturalKorean } from "./engine.js?v=19";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=19";
+import { solveProjectedLayout } from "./layout.js?v=19";
+import { mountTable } from "./table3d.js?v=19";
 
 const ui = {
   selected: null,
