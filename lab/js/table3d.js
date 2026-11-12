@@ -1,6 +1,7 @@
-import * as THREE from "../vendor/three.module.js?v=23";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=23";
-import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=23";
+import * as THREE from "../vendor/three.module.js?v=25";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=25";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=25";
+import { stampCanvas } from "./stamp.js?v=25";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -31,6 +32,33 @@ function loadTexture(url, cache) {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.userData = { url };
   cache.set(url, texture);
+  return texture;
+}
+
+function loadPlayCard(card, cache) {
+  const url = CARD_INFO[card?.type]?.image;
+  if (!url) return null;
+  const key = `play:${url}:${card.suit}:${card.rank}`;
+  if (cache.has(key)) return cache.get(key);
+  const canvas = document.createElement("canvas");
+  canvas.width = 400;
+  canvas.height = 622;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fffdf8";
+  ctx.fillRect(0, 0, 400, 622);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.userData = { url, suit: card.suit, rank: card.rank };
+  const img = new Image();
+  img.onload = () => {
+    const stamped = stampCanvas(img, card.suit, card.rank);
+    ctx.clearRect(0, 0, 400, 622);
+    ctx.drawImage(stamped, 0, 0, 400, 622);
+    texture.needsUpdate = true;
+    texture.userData.url = stamped.toDataURL("image/jpeg", 0.86);
+  };
+  img.src = url;
+  cache.set(key, texture);
   return texture;
 }
 
@@ -151,6 +179,7 @@ export function mountTable(canvas) {
   const pointer = new THREE.Vector2();
   let view = null;
   let aimIds = new Set();
+  let aiming = false;
   let running = true;
   let width = 1;
   let height = 1;
@@ -277,6 +306,8 @@ export function mountTable(canvas) {
       mesh.userData.kind = zone.kind;
       mesh.userData.baseY = mesh.position.y;
       mesh.userData.image = texture?.userData?.url || texture?.image?.src || "";
+      mesh.userData.suit = texture?.userData?.suit || "";
+      mesh.userData.rank = texture?.userData?.rank || "";
       if (playerId) {
         mesh.userData.playerId = playerId;
         mesh.userData.peek = playerId !== mine;
@@ -286,13 +317,13 @@ export function mountTable(canvas) {
     };
     ordered.forEach((player, index) => {
       const zone = (kind) => layout.leaves.find((item) => item.seat === index && item.kind === kind);
-      const reach = onTurn && player.id !== mine && player.connected !== false && player.distance != null && player.distance <= weaponRange(next);
-      const mode = player.id === mine ? "self" : (reach ? "reach" : "dim");
+      const reach = aiming ? aimIds.has(player.id) : (onTurn && player.id !== mine && player.connected !== false && player.distance != null && player.distance <= weaponRange(next));
+      const mode = player.id === mine ? "self" : (aiming ? (reach ? "reach" : "dim") : (reach ? "reach" : "self"));
       const character = characterById(player.character);
       const role = player.role && ROLES[player.role];
       put(zone("character"), loadTexture(character?.image, textures) || back, player.id, mode);
       put(zone("role"), role ? loadTexture(role.image, textures) : back, player.id, mode);
-      if (player.id !== mine) put(zone("hand"), back, player.id, mode);
+      placeHandFan(player, zone("character"), mode, player.id === mine);
       const eq = player.equipment || {};
       placeGear(player, zone("gear"), mode);
       const anchor = zone("character");
@@ -328,9 +359,48 @@ export function mountTable(canvas) {
       markers.set(player.id, marker);
     });
     if (next.deckCount) put(layout.deck, back, "", "self");
-    if (next.discardTop) put(layout.discard, loadTexture(CARD_INFO[next.discardTop.type]?.image, textures), "", "self");
+    if (next.discardTop) put(layout.discard, loadPlayCard(next.discardTop, textures), "", "self");
     groups.__layout = layout;
     groups.__order = ordered.map((player) => player.id);
+  }
+
+  function placeHandFan(player, anchor, mode, mine) {
+    const count = mine ? (player.hand || []).length : (player.handCount || 0);
+    const shown = Math.min(count, 6);
+    if (!shown || !anchor?.world) return;
+    const span = Math.hypot(anchor.world.x, anchor.world.z) || 1;
+    const outX = anchor.world.x / span;
+    const outZ = anchor.world.z / span;
+    const rightX = -outZ;
+    const rightZ = outX;
+    const cardW = anchor.world.w * 0.62;
+    const cardD = anchor.world.d * 0.62;
+    for (let i = 0; i < shown; i += 1) {
+      const card = mine ? player.hand[i] : null;
+      const texture = card ? loadPlayCard(card, textures) : back;
+      if (!texture) continue;
+      const mesh = cardMesh(texture, cardW, cardD, mode);
+      const along = (i - (shown - 1) / 2) * cardW * 0.34;
+      mesh.position.set(
+        anchor.world.x + outX * anchor.world.d * 0.95 + rightX * along,
+        0.045 + i * 0.006,
+        anchor.world.z + outZ * anchor.world.d * 0.95 + rightZ * along,
+      );
+      mesh.rotation.order = "YXZ";
+      mesh.rotation.y = cardYaw(anchor.world.x, anchor.world.z) + (i - (shown - 1) / 2) * 0.12;
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.userData.kind = "hand";
+      mesh.userData.image = texture.userData?.url || "";
+      mesh.userData.playerId = player.id;
+      mesh.userData.secret = !mine;
+      mesh.userData.handCount = count;
+      mesh.userData.handId = card?.id || "";
+      mesh.userData.suit = card?.suit || "";
+      mesh.userData.rank = card?.rank || "";
+      mesh.userData.baseY = mesh.position.y;
+      scene.add(mesh);
+      groups.set(`hand-${player.id}-${i}`, mesh);
+    }
   }
 
   function placeGear(player, zone, mode) {
@@ -342,7 +412,7 @@ export function mountTable(canvas) {
     const rightX = -zone.world.z / span;
     const rightZ = zone.world.x / span;
     cards.forEach((card, index) => {
-      const texture = loadTexture(CARD_INFO[card.type]?.image, textures);
+      const texture = loadPlayCard(card, textures);
       if (!texture) return;
       const mesh = cardMesh(texture, cardW, zone.world.d, mode);
       const along = (index - (n - 1) / 2) * cardW * 0.3;
@@ -355,8 +425,11 @@ export function mountTable(canvas) {
       mesh.rotation.y = cardYaw(zone.world.x, zone.world.z);
       mesh.rotation.x = -Math.PI / 2;
       mesh.userData.kind = "gear";
+      mesh.userData.cardType = card.type || "";
       mesh.userData.gear = true;
       mesh.userData.image = texture?.userData?.url || "";
+      mesh.userData.suit = card.suit || "";
+      mesh.userData.rank = card.rank || "";
       mesh.userData.playerId = player.id;
       mesh.userData.peek = false;
       mesh.userData.baseY = mesh.position.y;
@@ -487,13 +560,29 @@ export function mountTable(canvas) {
       });
       boxes.push({ id: mesh.userData.playerId, ...box });
     }
+    const hits = [];
+    for (const mesh of groups.values()) {
+      const kind = mesh.userData.kind;
+      if (!kind || kind === "role") continue;
+      const box = cardScreenBox(mesh);
+      hits.push({
+        kind,
+        playerId: mesh.userData.playerId || "",
+        secret: Boolean(mesh.userData.secret),
+        handCount: mesh.userData.handCount || 0,
+        cx: (box.left + box.right) / 2,
+        cy: (box.top + box.bottom) / 2,
+      });
+    }
+    globalThis.__bangHits = hits;
     globalThis.__bangBoxes = boxes;
     if (typeof onSpots === "function") onSpots(spots);
     return spots;
   }
 
-  function update(next, aim) {
+  function update(next, aim, aimingNow) {
     aimIds = new Set(aim || []);
+    aiming = Boolean(aimingNow);
     resize();
     rebuild(next);
     return publishSpots();
@@ -521,6 +610,11 @@ export function mountTable(canvas) {
       peek: Boolean(obj.userData.peek),
       gear: Boolean(obj.userData.gear),
       kind: obj.userData.kind || "",
+      suit: obj.userData.suit || "",
+      rank: obj.userData.rank || "",
+      secret: Boolean(obj.userData.secret),
+      handCount: obj.userData.handCount || 0,
+      handId: obj.userData.handId || "",
       box: meshScreenBox(obj),
     };
   }
@@ -594,14 +688,14 @@ export function mountTable(canvas) {
     }
     if (moved < 8 && prev.button === 0) {
       const now = Date.now();
-      if (now - lastTap < 320) {
+      const info = pick(event.clientX, event.clientY);
+      if (now - lastTap < 320 && !info?.image && !info?.kind) {
         lastTap = 0;
         resetView();
         return;
       }
       lastTap = now;
-      const info = pick(event.clientX, event.clientY);
-      if (info?.image) onZoom?.(info);
+      if (info?.image || info?.kind) onZoom?.(info);
     } else settleView();
   }
   canvas.addEventListener("pointerup", endFinger);

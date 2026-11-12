@@ -201,6 +201,10 @@ test("Jesse Jones can take the first card from a hand", () => {
   state.prompt = { kind: "jesse", playerId: jesse.id, options: [other.id] };
   const before = other.hand.length;
   assert.equal(dispatch(state, jesse.id, { type: "respond", mode: "player", targetId: other.id }).ok, true);
+  assert.equal(state.prompt.kind, "hand");
+  const index = other.hand.findIndex((c) => c.id === "stolen");
+  assert.equal(dispatch(state, jesse.id, { type: "respond", index }).ok, true);
+  assert.equal(other.hand.some((c) => c.id === "stolen"), false);
   assert.ok(other.hand.length < before);
 });
 

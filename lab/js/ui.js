@@ -1,8 +1,9 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=23";
-import { naturalKorean } from "./engine.js?v=23";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=23";
-import { solveProjectedLayout } from "./layout.js?v=23";
-import { mountTable } from "./table3d.js?v=23";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=25";
+import { naturalKorean } from "./engine.js?v=25";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=25";
+import { solveProjectedLayout } from "./layout.js?v=25";
+import { mountTable } from "./table3d.js?v=25";
+import { stampURL } from "./stamp.js?v=25";
 
 const ui = {
   selected: null,
@@ -27,11 +28,18 @@ function esc(value) {
 }
 
 function cardArt(card, attrs = "") {
+  if (!card || card.back || card.type === "back") {
+    return `<button type="button" class="card card-back" ${attrs}><span class="back-mark">BANG!</span></button>`;
+  }
   const info = CARD_INFO[card.type];
   const suit = SUITS[card.suit];
-  return `<button type="button" class="card" data-card-id="${esc(card.id)}" data-type="${esc(card.type)}" ${attrs}>
+  const pip = `${suit.symbol}${esc(card.rank)}`;
+  const tone = suit.red ? " red" : "";
+  return `<button type="button" class="card" data-card-id="${esc(card.id)}" data-type="${esc(card.type)}" data-suit="${esc(card.suit)}" data-rank="${esc(card.rank)}" ${attrs}>
     <img src="${info.image}" alt="${esc(info.ko)}" draggable="false" />
-    <span class="pip ${suit.red ? "red" : ""}">${suit.symbol}${esc(card.rank)}</span>
+    <span class="art-index" aria-hidden="true"></span>
+    <span class="pip${tone}">${pip}</span>
+    <span class="pip pip-foot${tone}">${pip}</span>
   </button>`;
 }
 
@@ -77,6 +85,7 @@ function paint(app, ctx) {
   app.dataset.phase = view?.phase || "";
   app.dataset.prompt = view?.prompt?.mine ? view.prompt.kind : "";
   app.dataset.yourTurn = view && view.currentId === view.yourId && view.turnPhase === "play" && !view.prompt ? "1" : "0";
+  app.dataset.aiming = ui.selected ? "1" : "0";
   app.dataset.winner = view?.winner?.team || "";
   app.dataset.host = view && view.yourId === view.hostId ? "1" : "0";
   app.dataset.arc = view?.arc ? "1" : "";
@@ -537,6 +546,12 @@ function abilityPanel(view) {
     return `<div class="ability-panel"><p>시드 케첨</p><button type="button" class="bar-btn" data-action="sid-mode">${ui.sidMode ? "회복 취소" : "카드 2장 버리고 생명 1 회복"}</button></div>`;
   }
   if (!prompt?.mine) return "";
+  if (prompt.kind === "hand") {
+    const backs = Array.from({ length: prompt.count }, (_, index) =>
+      `<button type="button" class="card card-back choice-back" data-hand-back="${index}" aria-label="뒷면 카드"><span class="back-mark">BANG!</span></button>`).join("");
+    const title = prompt.reason === "jesse" ? "가져갈 손패를 고르세요" : "손패에서 한 장을 고르세요";
+    return `<div class="ability-panel" data-ability="hand"><p>${title}</p><div class="store-row">${backs}</div></div>`;
+  }
   if (prompt.kind === "kit") {
     const cards = prompt.cards || [];
     return `<div class="ability-panel" data-ability="kit">
@@ -577,7 +592,10 @@ function pickerHtml(view) {
   if (!ui.picker) return "";
   const target = view.players.find((p) => p.id === ui.picker.targetId);
   const buttons = ui.picker.takes.map((take) => {
-    if (take === "hand") return `<button type="button" data-take="hand">손패에서 무작위</button>`;
+    if (take === "hand") {
+      const count = target?.handCount || 0;
+      return Array.from({ length: count }, (_, index) => `<button type="button" class="card card-back choice-back" data-take="hand" data-hand-index="${index}" aria-label="뒷면 카드"><span class="back-mark">BANG!</span></button>`).join("");
+    }
     const card = Object.values(target?.equipment || {}).find((c) => c && c.id === take);
     if (!card) return "";
     return `<button type="button" data-take="${esc(take)}">${cardArt(card)}</button>`;
@@ -719,6 +737,11 @@ function onClick(event, app) {
     ctx.onAction({ type: "draw" });
     return;
   }
+  const handBack = event.target.closest("[data-hand-back]");
+  if (handBack && view?.prompt?.kind === "hand" && view.prompt.mine) {
+    ctx.onAction({ type: "respond", index: Number(handBack.dataset.handBack) });
+    return;
+  }
   const kitCard = event.target.closest("[data-kit-card]");
   if (kitCard && view?.prompt?.kind === "kit") {
     const id = kitCard.dataset.kitCard;
@@ -749,11 +772,13 @@ function onClick(event, app) {
     return;
   }
   if (event.target.closest("[data-take]")) {
-    const take = event.target.closest("[data-take]").dataset.take;
+    const button = event.target.closest("[data-take]");
+    const take = button.dataset.take;
+    const index = button.dataset.handIndex;
     const pick = ui.picker;
     ui.picker = null;
     ui.selected = null;
-    if (pick) ctx.onAction({ type: "play", cardId: pick.cardId, targetId: pick.targetId, take });
+    if (pick) ctx.onAction({ type: "play", cardId: pick.cardId, targetId: pick.targetId, take, index: index == null ? undefined : Number(index) });
     return;
   }
   if (event.target.closest("[data-store-card]")) {
@@ -949,8 +974,8 @@ function onSpreadClick(event, layer) {
   renderSpread(ctx);
 }
 
-function runSpreadAction(ctx, act) {
-  const cardId = ui.spreadPick;
+function runSpreadAction(ctx, act, zoomCardId) {
+  const cardId = zoomCardId || ui.spreadPick;
   const view = ctx.view;
   const me = view?.players?.find((p) => p.id === view.yourId);
   if (act === "play" && cardId) {
@@ -1025,8 +1050,8 @@ function spreadHandActions(ctx, cardId) {
   const info = view.handInfo?.find((h) => h.cardId === cardId);
   if (!info) return `<p class="spread-note">지금은 그 카드를 낼 수 없습니다.</p>`;
   if (!info.ok) return `<p class="spread-note">${esc(info.reason || "지금은 그 카드를 낼 수 없습니다.")}</p>`;
-  if (info.needsTarget) return `<button type="button" class="bar-btn" data-spread-act="aim">대상 선택</button>`;
-  return `<button type="button" class="bar-btn" data-spread-act="play">내기</button>`;
+  if (info.needsTarget) return `<button type="button" class="bar-btn choice-btn" data-spread-act="aim">내기</button>`;
+  return `<button type="button" class="bar-btn choice-btn" data-spread-act="play">내기</button>`;
 }
 
 function spreadSeatHtml(p, view) {
@@ -1142,9 +1167,28 @@ function syncTable(app, view) {
       app.dataset.renderer = "webgl";
       ui.gl.setPeek?.(showPeek);
       ui.gl.setZoom?.((info) => {
-        const view = app.__ctx?.view;
+        const ctx = app.__ctx;
+        const view = ctx?.view;
+        if (ui.selected && info?.kind === "character" && info.playerId) {
+          const cardInfo = view?.handInfo?.find((item) => item.cardId === ui.selected);
+          const allowed = cardInfo?.targets?.some((target) => target.id === info.playerId);
+          if (allowed) playAt(ctx, ui.selected, info.playerId);
+          else {
+            const blocked = cardInfo?.blocked?.find((target) => target.id === info.playerId);
+            ctx.onToast?.(blocked?.reason || "그 대상에게는 낼 수 없습니다.");
+          }
+          return;
+        }
         if (info?.kind === "deck" && view && view.currentId === view.yourId && view.turnPhase === "draw" && !view.prompt) {
-          app.__ctx.onAction({ type: "draw" });
+          ctx.onAction({ type: "draw" });
+          return;
+        }
+        if (info?.kind === "hand" && info.secret) {
+          openCardZoom(info.image, info.box, { backs: info.handCount || 1, caption: `${info.handCount || 0}장` });
+          return;
+        }
+        if (info?.kind === "hand" && info.handId) {
+          openCardZoom(info.image, info.box, { handId: info.handId, suit: info.suit, rank: info.rank });
           return;
         }
         if (info?.image && info.box) openCardZoom(info.image, info.box, info);
@@ -1166,51 +1210,63 @@ function syncTable(app, view) {
   board.classList.toggle("is-webgl", webgl);
   board.classList.toggle("is-flat3d", !webgl);
   board.classList.toggle("is-aiming", Boolean(ui.selected));
-  let projected = null;
+  ui.latestView = view;
   if (webgl) {
-    const legal = ui.selected ? view.players.filter((p) => isTarget(view, p.id)).map((p) => p.id) : [];
-    projected = ui.gl.update(view, legal);
     ui.gl.setSpots?.((spots) => {
       const live = app.querySelector(".felt");
       if (live && ui.latestView) placeFelt(live, ui.latestView, spots, true);
     });
+    const legal = ui.selected ? view.players.filter((p) => isTarget(view, p.id)).map((p) => p.id) : [];
+    ui.gl.update(view, legal, Boolean(ui.selected));
+  } else placeFelt(felt, view, null, false);
+}
+
+function stableSpot(id, x, y) {
+  if (!ui.labelHold) ui.labelHold = new Map();
+  const prev = ui.labelHold.get(id);
+  if (!prev) {
+    const spot = { x, y, pendingX: x, pendingY: y, pendingN: 0 };
+    ui.labelHold.set(id, spot);
+    return spot;
   }
-  ui.latestView = view;
-  placeFelt(felt, view, projected, webgl);
+  const jump = Math.hypot(x - prev.x, y - prev.y);
+  if (jump < 4) {
+    prev.pendingN = 0;
+    return prev;
+  }
+  if (Math.hypot(x - prev.pendingX, y - prev.pendingY) < 4) prev.pendingN += 1;
+  else {
+    prev.pendingX = x;
+    prev.pendingY = y;
+    prev.pendingN = 1;
+  }
+  if (prev.pendingN >= 5 || jump > 120) {
+    prev.x = x;
+    prev.y = y;
+    prev.pendingN = 0;
+  }
+  return prev;
 }
 
 function placeFelt(felt, view, projected, webgl) {
   const living = view.players.filter((p) => p.alive !== false);
   const me = living.find((p) => p.id === view.yourId);
   const ordered = me ? [me, ...living.filter((p) => p.id !== me.id)] : living;
-  const layout = solveProjectedLayout(window.innerWidth, window.innerHeight, ordered.length);
-  const placed = [];
+  const layout = webgl ? null : solveProjectedLayout(window.innerWidth, window.innerHeight, ordered.length);
   ordered.forEach((player, index) => {
     const node = felt.querySelector(player.id === view.yourId ? ".self-tray" : `.seat[data-player="${player.id}"]`);
     if (!node) return;
-    const spot = webgl && projected ? projected.find((item) => item.id === player.id) : layout.seats[index];
-    if (!spot) return;
+    const raw = webgl && projected ? projected.find((item) => item.id === player.id) : layout.seats[index];
+    if (!raw) return;
+    const spot = webgl ? stableSpot(player.id, raw.x, raw.y) : raw;
     node.style.left = `${spot.x}px`;
     node.style.top = `${spot.y}px`;
-    node.style.width = `${spot.w}px`;
-    node.style.height = `${spot.h || 28}px`;
+    node.style.width = `${raw.w}px`;
+    node.style.height = "auto";
     node.style.transform = "none";
-    placed.push({ node, spot });
   });
-  if (webgl && placed.length) {
-    const sample = placed[0];
-    const rect = sample.node.getBoundingClientRect();
-    const dx = rect.left - sample.spot.x;
-    const dy = rect.top - sample.spot.y;
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-      for (const item of placed) {
-        item.node.style.left = `${item.spot.x - dx}px`;
-        item.node.style.top = `${item.spot.y - dy}px`;
-      }
-    }
-  }
   const piles = felt.querySelector(".center-piles");
-  if (piles && layout.deck && !webgl) {
+  if (piles && layout?.deck && !webgl) {
     piles.style.left = `${layout.deck.x}px`;
     piles.style.top = `${layout.deck.y}px`;
     piles.style.width = `${layout.discard.x + layout.discard.w - layout.deck.x}px`;
@@ -1218,8 +1274,22 @@ function placeFelt(felt, view, projected, webgl) {
   }
 }
 
+let zoomToken = 0;
+
 function openCardZoom(src, from, extra = {}) {
   if (!src || !from) return;
+  const token = ++zoomToken;
+  const show = (url) => {
+    if (token === zoomToken) paintCardZoom(url, from, extra);
+  };
+  if (extra.suit && extra.rank) {
+    stampURL(src, extra.suit, extra.rank).then(show);
+    return;
+  }
+  show(src);
+}
+
+function paintCardZoom(src, from, extra) {
   let layer = document.querySelector("#card-zoom");
   if (!layer) {
     layer = document.createElement("div");
@@ -1234,8 +1304,14 @@ function openCardZoom(src, from, extra = {}) {
   const ctx = document.querySelector("#app")?.__ctx;
   const handId = extra.handId || "";
   const actions = handId && ctx ? spreadHandActions(ctx, handId) : "";
+  const backs = extra.backs ? Array.from({ length: Math.max(1, extra.backs) }, () => `<span class="zoom-back">BANG!</span>`).join("") : "";
   layer.hidden = false;
-  layer.innerHTML = `<img class="zoom-fly" alt="" src="${esc(src)}" style="left:${from.left}px;top:${from.top}px;width:${from.width}px;height:${from.height}px" />${actions ? `<div class="zoom-actions">${actions.replaceAll("data-spread-act", "data-zoom-act")}</div>` : ""}`;
+  layer.innerHTML = `${backs ? `<div class="zoom-backs" style="left:${from.left}px;top:${from.top}px">${backs}<p>${esc(extra.caption || "")}</p></div>` : `<img class="zoom-fly" alt="" src="${esc(src)}" style="left:${from.left}px;top:${from.top}px;width:${from.width}px;height:${from.height}px" />`}${actions ? `<div class="zoom-actions">${actions.replaceAll("data-spread-act", "data-zoom-act")}</div>` : ""}`;
+  if (backs) {
+    const fan = layer.querySelector(".zoom-backs");
+    requestAnimationFrame(() => fan?.classList.add("is-open"));
+    return;
+  }
   const img = layer.querySelector(".zoom-fly");
   img.dataset.from = JSON.stringify({ left: from.left, top: from.top, width: from.width, height: from.height });
   requestAnimationFrame(() => img.classList.add("is-open"));
@@ -1243,17 +1319,22 @@ function openCardZoom(src, from, extra = {}) {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       const act = button.dataset.zoomAct;
+      const cardId = extra.handId || "";
       closeCardZoom();
-      if (ctx) runSpreadAction(ctx, act);
+      if (ctx) runSpreadAction(ctx, act, cardId);
     });
   });
 }
 
 function closeCardZoom() {
+  zoomToken += 1;
   const layer = document.querySelector("#card-zoom");
-  const img = layer?.querySelector(".zoom-fly");
+  const img = layer?.querySelector(".zoom-fly, .zoom-backs");
   if (!img) {
-    if (layer) layer.hidden = true;
+    if (layer) {
+      layer.hidden = true;
+      layer.innerHTML = "";
+    }
     return;
   }
   const from = JSON.parse(img.dataset.from || "{}");
@@ -1316,10 +1397,25 @@ function wireFan() {
     const tap = ui.handTap;
     if (!tap || tap.id !== event.pointerId) return;
     ui.handTap = null;
-    if (Math.hypot(event.clientX - tap.x, event.clientY - tap.y) > 14) return;
+    const dx = event.clientX - tap.x;
+    const dy = event.clientY - tap.y;
+    if (dy < -42 && Math.abs(dy) > Math.abs(dx)) {
+      const ctx = app.__ctx;
+      const info = ctx?.view?.handInfo?.find((item) => item.cardId === tap.card.dataset.cardId);
+      if (info?.ok && info.needsTarget) {
+        ui.selected = tap.card.dataset.cardId;
+        mount(app, ctx);
+      } else if (info?.ok) ctx.onAction({ type: "play", cardId: tap.card.dataset.cardId });
+      return;
+    }
+    if (Math.hypot(dx, dy) > 14) return;
     const img = tap.card.querySelector("img");
     if (!img) return;
-    openCardZoom(img.getAttribute("src"), tap.card.getBoundingClientRect(), { handId: tap.card.dataset.cardId });
+    openCardZoom(img.getAttribute("src"), tap.card.getBoundingClientRect(), {
+      handId: tap.card.dataset.cardId,
+      suit: tap.card.dataset.suit,
+      rank: tap.card.dataset.rank,
+    });
   });
   window.addEventListener("pointermove", (event) => {
     const fan = ui.fan;
@@ -1537,12 +1633,13 @@ function drainReveal() {
   const layer = ensureReveal();
   const cards = ev.cards || [];
   layer.hidden = false;
+  document.body.dataset.reveals = `${document.body.dataset.reveals || ""}|${ev.caption || ""}`.slice(-900);
   layer.innerHTML = `<div class="reveal-stage">
     <div class="reveal-row">${cards.map((card) => `<div class="reveal-flip"><div class="reveal-inner">${cardArt(card)}</div></div>`).join("")}</div>
     <p class="reveal-caption">${esc(ev.caption || "")}</p>
   </div>`;
   requestAnimationFrame(() => layer.querySelectorAll(".reveal-flip").forEach((node) => node.classList.add("is-up")));
-  const hold = ev.to === "hold" ? 1500 : 1150;
+  const hold = ev.to === "hold" ? 1800 : 1600;
   window.setTimeout(() => {
     const dest = revealDestination(ev);
     const row = layer.querySelector(".reveal-row");

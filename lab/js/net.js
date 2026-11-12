@@ -1,6 +1,6 @@
-import { ENTRY_CODE, ROOM_ID } from "./config.js?v=23";
-import { addPlayer, autoChoice, claimSeat, createLobby, dispatch, expireDisconnects, markDisconnect, projectView, rebindPlayer } from "./engine.js?v=23";
-import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=23";
+import { ENTRY_CODE, ROOM_ID } from "./config.js?v=25";
+import { addPlayer, autoChoice, claimSeat, createLobby, dispatch, expireDisconnects, markDisconnect, projectView, rebindPlayer } from "./engine.js?v=25";
+import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=25";
 
 const HOST_LOST_MS = 20000;
 const STALE_MS = 45000;
@@ -205,7 +205,10 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       return;
     }
     if (reclaim && freshForeignBeat()) return;
-    if (!reclaim && electionWinner() !== playerId) return;
+    const crownedMe = !reclaim && pendingCrown && crownedWinner() === playerId;
+    if (!crownedMe) {
+      if (!reclaim && electionWinner() !== playerId) return;
+    }
     isHost = true;
     hostPeer = playerId;
     lastBeat = Date.now();
@@ -214,14 +217,22 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     pendingCrown = null;
     const snap = crowned?.players ? crowned : readSnap();
     if (snap) {
+      const previousHost = snap.hostId;
       state = snap;
       state.hostId = playerId;
       const now = Date.now();
       for (const p of state.players) {
         const here = p.id === playerId;
-        p.connected = here;
-        if (here) delete p.disconnectedAt;
-        else p.disconnectedAt = now;
+        const info = directory.get(p.id);
+        const live = info && now - info.seen < STALE_MS;
+        const goneHost = p.id === previousHost && p.id !== playerId;
+        if (here || (live && !goneHost)) {
+          p.connected = true;
+          delete p.disconnectedAt;
+        } else {
+          p.connected = false;
+          p.disconnectedAt = now;
+        }
       }
     } else {
       const seed = Number(localStorage.getItem("bang-seed")) || ((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0);
@@ -300,8 +311,12 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
 
   async function ingest(msg, via) {
     if (!msg || destroyed || steppedAside) return;
-    if (msg.kind === "crown" && msg.state?.players) {
+    if (msg.kind === "crown" && msg.state?.players && (!msg.to || msg.to === playerId)) {
       pendingCrown = msg.state;
+      if (!isHost) {
+        lastBeat = 0;
+        scheduleElect(600);
+      }
       return;
     }
     if (msg.kind === "hello") {
@@ -483,10 +498,21 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     }
   }, 2000);
 
+  function crownedWinner() {
+    if (!pendingCrown?.players) return null;
+    const ids = pendingCrown.players.filter((p) => p.connected !== false).map((p) => p.id);
+    if (!ids.length) return null;
+    return ids.slice().sort()[0];
+  }
+
   function leaveSeat() {
     if (steppedAside || destroyed) return;
     if (isHost && state) {
       markDisconnect(state, playerId);
+      for (const [id, info] of directory) {
+        if (id === playerId || !info?.pub) continue;
+        direct(id, { kind: "crown", state, to: id }, info.pub, info.slug);
+      }
       broadcast();
       return;
     }

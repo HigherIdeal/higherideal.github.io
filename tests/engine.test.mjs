@@ -375,6 +375,8 @@ test("Suzy draws from an empty hand and Vulture Sam collects the dead", () => {
   other.character = "rose";
   const res = dispatch(state, other.id, { type: "play", cardId: "panic", targetId: suzy.id, take: "hand" });
   assert.equal(res.ok, true, res.error);
+  assert.equal(state.prompt.kind, "hand");
+  assert.equal(dispatch(state, other.id, { type: "respond", index: 0 }).ok, true);
   assert.equal(suzy.hand.length, 1);
   assert.equal(suzy.hand[0].id, "drawn");
 
