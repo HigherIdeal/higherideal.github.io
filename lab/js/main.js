@@ -1,6 +1,6 @@
-import { ENTRY_CODE } from "./config.js?v=11";
-import { connect } from "./net.js?v=11";
-import { mount } from "./ui.js?v=11";
+import { ENTRY_CODE } from "./config.js?v=12";
+import { connect } from "./net.js?v=12";
+import { mount } from "./ui.js?v=12";
 
 const app = document.querySelector("#app");
 let link = null;
@@ -8,7 +8,7 @@ let view = null;
 let status = { mode: "entry", text: "" };
 let toast = "";
 let entryError = "";
-let savedName = localStorage.getItem("bang-nickname") || "";
+let savedName = "";
 let toastTimer = 0;
 
 function draw() {
