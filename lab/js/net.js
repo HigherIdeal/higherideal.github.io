@@ -1,6 +1,6 @@
-import { ENTRY_CODE, ROOM_ID } from "./config.js?v=22";
-import { addPlayer, autoChoice, claimSeat, createLobby, dispatch, expireDisconnects, markDisconnect, projectView, rebindPlayer } from "./engine.js?v=22";
-import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=22";
+import { ENTRY_CODE, ROOM_ID } from "./config.js?v=23";
+import { addPlayer, autoChoice, claimSeat, createLobby, dispatch, expireDisconnects, markDisconnect, projectView, rebindPlayer } from "./engine.js?v=23";
+import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=23";
 
 const HOST_LOST_MS = 20000;
 const STALE_MS = 45000;
@@ -468,7 +468,7 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       }
     }
     if (changed) broadcast();
-    const actor = state.prompt?.playerId || (state.phase === "play" && state.turnPhase === "play" ? state.currentId : null);
+    const actor = state.prompt?.playerId || (state.phase === "play" && (state.turnPhase === "play" || state.turnPhase === "draw") ? state.currentId : null);
     if (!actor) return;
     const who = state.players.find((p) => p.id === actor);
     if (!who || who.connected !== false || who.id === playerId) {

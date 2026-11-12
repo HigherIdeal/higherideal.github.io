@@ -1,8 +1,8 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=22";
-import { naturalKorean } from "./engine.js?v=22";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=22";
-import { solveProjectedLayout } from "./layout.js?v=22";
-import { mountTable } from "./table3d.js?v=22";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=23";
+import { naturalKorean } from "./engine.js?v=23";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=23";
+import { solveProjectedLayout } from "./layout.js?v=23";
+import { mountTable } from "./table3d.js?v=23";
 
 const ui = {
   selected: null,
@@ -17,6 +17,7 @@ const ui = {
   spread: null,
   spreadPick: null,
   hostAsk: null,
+  kitKeep: new Set(),
 };
 
 function esc(value) {
@@ -60,6 +61,16 @@ function paint(app, ctx) {
   ui.paintedView = ctx.view;
   ui.life = {};
   for (const person of ctx.view?.players || []) ui.life[person.id] = person.hp;
+  const prevYou = previousView?.players?.find((p) => p.id === previousView.yourId);
+  const you = ctx.view?.players?.find((p) => p.id === ctx.view.yourId);
+  if (prevYou && you && previousView.turnPhase === "draw" && ctx.view.turnPhase === "play" && you.hand && prevYou.hand && you.hand.length > prevYou.hand.length) {
+    flyDrawCards(you.hand.slice(prevYou.hand.length));
+  }
+  const latestCue = (ctx.view?.cues || []).slice(-1)[0];
+  if (latestCue && latestCue.id !== ui.seenCue) {
+    ui.seenCue = latestCue.id;
+    showAbilityCue(latestCue.text);
+  }
   const view = ctx.view;
   app.dataset.screen = view?.phase || (ctx.status?.mode === "entry" ? "entry" : "wait");
   app.dataset.status = ctx.status?.mode || "";
@@ -280,6 +291,7 @@ function tableHtml(ctx) {
       </div>
       </div>
     </section>
+    ${abilityPanel(view)}
     ${view.paused ? `<div class="pause-overlay" role="status">일시정지</div>` : ""}
     ${hostPassHtml()}
     ${pickerHtml(view)}
@@ -515,9 +527,44 @@ function storeHtml(view) {
   </div>`;
 }
 
+function abilityPanel(view) {
+  const me = view.players.find((p) => p.id === view.yourId);
+  const prompt = view.prompt;
+  if (view.currentId === view.yourId && view.turnPhase === "draw" && !prompt && !view.paused) {
+    return `<button type="button" class="draw-prompt" data-action="draw">카드 뽑기</button>`;
+  }
+  if (me?.character === "sid" && view.currentId === me.id && view.turnPhase === "play" && !prompt && me.hp < me.maxHp && (me.hand || []).length >= 2) {
+    return `<div class="ability-panel"><p>시드 케첨</p><button type="button" class="bar-btn" data-action="sid-mode">${ui.sidMode ? "회복 취소" : "카드 2장 버리고 생명 1 회복"}</button></div>`;
+  }
+  if (!prompt?.mine) return "";
+  if (prompt.kind === "kit") {
+    const cards = prompt.cards || [];
+    return `<div class="ability-panel" data-ability="kit">
+      <p>키트 칼슨 · 가져갈 두 장을 고르세요</p>
+      <div class="store-row">${cards.map((card) => cardArt(card, `data-kit-card="${esc(card.id)}" ${ui.kitKeep.has(card.id) ? "data-kept=\"1\"" : ""}`)).join("")}</div>
+      <button type="button" class="bar-btn" data-action="kit-keep" ${ui.kitKeep.size === 2 ? "" : "disabled"}>이 두 장 가지기</button>
+    </div>`;
+  }
+  if (prompt.kind === "jesse") {
+    const people = (prompt.options || []).map((id) => {
+      const who = view.players.find((p) => p.id === id);
+      return `<button type="button" class="bar-btn" data-draw="player" data-target="${esc(id)}">${esc(who?.nickname || "")}의 손패</button>`;
+    }).join("");
+    return `<div class="ability-panel" data-ability="jesse"><p>제시 존스 · 첫 카드를 어디서 뽑을까요</p><div class="store-row"><button type="button" class="bar-btn" data-draw="deck">덱에서</button>${people}</div></div>`;
+  }
+  if (prompt.kind === "pedro") {
+    const top = prompt.top ? cardArt(prompt.top) : "";
+    return `<div class="ability-panel" data-ability="pedro"><p>페드로 라미레즈 · 첫 카드</p><div class="store-row">${top}<button type="button" class="bar-btn" data-draw="discard">버린 카드</button><button type="button" class="bar-btn" data-draw="deck">덱에서</button></div></div>`;
+  }
+  if (prompt.kind === "lucky") {
+    return `<div class="ability-panel" data-ability="lucky"><p>럭키 듀크 · 드로우!로 쓸 카드를 고르세요</p><div class="store-row">${(prompt.cards || []).map((card) => cardArt(card, `data-pick-card="1"`)).join("")}</div></div>`;
+  }
+  return "";
+}
+
 function promptCardsHtml(view) {
   const prompt = view.prompt;
-  if (!prompt || !prompt.cards) return "";
+  if (!prompt || !prompt.cards || prompt.kind === "kit" || prompt.kind === "lucky") return "";
   if (!prompt.mine && prompt.kind === "kit") return `<p class="prompt-note">키트 칼슨이 카드를 살펴보는 중</p>`;
   const label = prompt.kind === "kit" ? "덱 위에 되돌릴 카드" : "드로우! 결과로 쓸 카드";
   return `<div class="store">
@@ -579,9 +626,11 @@ function phaseLine(view, current) {
     if (prompt.kind === "store") return "잡화점에서 카드를 고르세요";
     if (prompt.kind === "jesse") return "첫 카드를 어디서 가져올까요?";
     if (prompt.kind === "pedro") return "버린 카드 더미를 가져올까요?";
-    if (prompt.kind === "kit") return "한 장을 덱 위에 올리세요";
+    if (prompt.kind === "kit") return "키트 칼슨 · 가져갈 두 장을 고르세요";
     if (prompt.kind === "lucky") return "두 장 중 드로우! 결과를 고르세요";
   }
+  if (prompt?.mine && prompt.kind === "kit") return "키트 칼슨 · 가져갈 두 장을 고르세요";
+  if (view.currentId === view.yourId && view.turnPhase === "draw" && !prompt) return "덱을 눌러 카드를 뽑으세요";
   if (view.currentId === view.yourId && view.turnPhase === "play") return "당신의 턴 · 카드를 내거나 턴을 종료하세요";
   if (current) return `${name} 님의 턴`;
   return "게임 진행 중";
@@ -666,6 +715,24 @@ function onClick(event, app) {
   }
   if (event.target.closest("[data-action=again]")) ctx.onAction({ type: "again" });
   if (event.target.closest("[data-action=end]")) ctx.onAction({ type: "end" });
+  if (event.target.closest("[data-action=draw]")) {
+    ctx.onAction({ type: "draw" });
+    return;
+  }
+  const kitCard = event.target.closest("[data-kit-card]");
+  if (kitCard && view?.prompt?.kind === "kit") {
+    const id = kitCard.dataset.kitCard;
+    if (ui.kitKeep.has(id)) ui.kitKeep.delete(id);
+    else if (ui.kitKeep.size < 2) ui.kitKeep.add(id);
+    mount(app, ctx);
+    return;
+  }
+  if (event.target.closest("[data-action=kit-keep]") && view?.prompt?.kind === "kit" && ui.kitKeep.size === 2) {
+    const back = (view.prompt.cards || []).find((card) => !ui.kitKeep.has(card.id));
+    ui.kitKeep = new Set();
+    if (back) ctx.onAction({ type: "respond", cardId: back.id });
+    return;
+  }
   if (event.target.closest("[data-char]")) {
     ctx.onAction({ type: "choose", characterId: event.target.closest("[data-char]").dataset.char });
     return;
@@ -1074,6 +1141,14 @@ function syncTable(app, view) {
       if (app.dataset.renderer !== "webgl") console.info("[bang] renderer", "webgl");
       app.dataset.renderer = "webgl";
       ui.gl.setPeek?.(showPeek);
+      ui.gl.setZoom?.((info) => {
+        const view = app.__ctx?.view;
+        if (info?.kind === "deck" && view && view.currentId === view.yourId && view.turnPhase === "draw" && !view.prompt) {
+          app.__ctx.onAction({ type: "draw" });
+          return;
+        }
+        if (info?.image && info.box) openCardZoom(info.image, info.box, info);
+      });
       ui.gl.setGear?.((info) => {
         if (!info?.playerId) return;
         ui.spread = { kind: "gear", playerId: info.playerId };
@@ -1143,33 +1218,108 @@ function placeFelt(felt, view, projected, webgl) {
   }
 }
 
+function openCardZoom(src, from, extra = {}) {
+  if (!src || !from) return;
+  let layer = document.querySelector("#card-zoom");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "card-zoom";
+    layer.hidden = true;
+    document.body.appendChild(layer);
+    layer.addEventListener("click", (event) => {
+      if (event.target.closest("[data-zoom-act]")) return;
+      closeCardZoom();
+    });
+  }
+  const ctx = document.querySelector("#app")?.__ctx;
+  const handId = extra.handId || "";
+  const actions = handId && ctx ? spreadHandActions(ctx, handId) : "";
+  layer.hidden = false;
+  layer.innerHTML = `<img class="zoom-fly" alt="" src="${esc(src)}" style="left:${from.left}px;top:${from.top}px;width:${from.width}px;height:${from.height}px" />${actions ? `<div class="zoom-actions">${actions.replaceAll("data-spread-act", "data-zoom-act")}</div>` : ""}`;
+  const img = layer.querySelector(".zoom-fly");
+  img.dataset.from = JSON.stringify({ left: from.left, top: from.top, width: from.width, height: from.height });
+  requestAnimationFrame(() => img.classList.add("is-open"));
+  layer.querySelectorAll("[data-zoom-act]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const act = button.dataset.zoomAct;
+      closeCardZoom();
+      if (ctx) runSpreadAction(ctx, act);
+    });
+  });
+}
+
+function closeCardZoom() {
+  const layer = document.querySelector("#card-zoom");
+  const img = layer?.querySelector(".zoom-fly");
+  if (!img) {
+    if (layer) layer.hidden = true;
+    return;
+  }
+  const from = JSON.parse(img.dataset.from || "{}");
+  img.classList.remove("is-open");
+  img.style.left = `${from.left || 0}px`;
+  img.style.top = `${from.top || 0}px`;
+  img.style.width = `${from.width || 80}px`;
+  img.style.height = `${from.height || 112}px`;
+  setTimeout(() => {
+    if (layer) {
+      layer.hidden = true;
+      layer.innerHTML = "";
+    }
+  }, 380);
+}
+
+function flyDrawCards(cards) {
+  const hand = document.querySelector(".stack.hand")?.getBoundingClientRect();
+  cards.forEach((card, index) => {
+    const info = CARD_INFO[card.type];
+    if (!info) return;
+    const img = document.createElement("img");
+    img.className = "draw-fly";
+    img.alt = "";
+    img.src = info.image;
+    img.style.left = `${window.innerWidth / 2 - 36}px`;
+    img.style.top = `${window.innerHeight * 0.42}px`;
+    document.body.appendChild(img);
+    const to = hand || { left: window.innerWidth / 2, top: window.innerHeight - 120 };
+    setTimeout(() => {
+      img.style.left = `${to.left + index * 18}px`;
+      img.style.top = `${to.top}px`;
+      img.style.opacity = "0.2";
+    }, 30);
+    setTimeout(() => img.remove(), 700);
+  });
+}
+
+function showAbilityCue(text) {
+  let node = document.querySelector("#ability-cue");
+  if (!node) {
+    node = document.createElement("div");
+    node.id = "ability-cue";
+    document.body.appendChild(node);
+  }
+  node.textContent = text;
+  node.hidden = false;
+  clearTimeout(ui.cueTimer);
+  ui.cueTimer = setTimeout(() => { node.hidden = true; }, 1700);
+}
+
 function wireFan() {
   const app = document.querySelector("#app");
   app.addEventListener("pointerdown", (event) => {
-    if (event.button > 0 || ui.fan) return;
-    const hand = event.target.closest(".stack.hand");
-    if (!hand) return;
-    const ctx = app.__ctx;
-    const me = ctx?.view?.players?.find((p) => p.id === ctx.view.yourId);
-    const cards = me?.hand || [];
-    if (!cards.length) return;
-    const tapped = event.target.closest("[data-card-id]");
-    const start = Math.max(0, cards.findIndex((card) => card.id === tapped?.dataset.cardId));
-    event.preventDefault();
-    ui.fan = {
-      id: event.pointerId,
-      originX: event.clientX,
-      originY: event.clientY,
-      lastY: event.clientY,
-      drag: -start,
-      target: -start,
-      holding: true,
-      cards,
-      focus: start,
-    };
-    try { hand.setPointerCapture(event.pointerId); } catch { /* pointer still reaches window */ }
-    ensureFan().hidden = false;
-    fanFrame();
+    const card = event.target.closest(".stack.hand [data-card-id]");
+    if (!card || event.button > 0) return;
+    ui.handTap = { id: event.pointerId, x: event.clientX, y: event.clientY, card };
+  });
+  app.addEventListener("pointerup", (event) => {
+    const tap = ui.handTap;
+    if (!tap || tap.id !== event.pointerId) return;
+    ui.handTap = null;
+    if (Math.hypot(event.clientX - tap.x, event.clientY - tap.y) > 14) return;
+    const img = tap.card.querySelector("img");
+    if (!img) return;
+    openCardZoom(img.getAttribute("src"), tap.card.getBoundingClientRect(), { handId: tap.card.dataset.cardId });
   });
   window.addEventListener("pointermove", (event) => {
     const fan = ui.fan;

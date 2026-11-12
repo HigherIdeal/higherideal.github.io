@@ -1,6 +1,6 @@
-import * as THREE from "../vendor/three.module.js?v=22";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=22";
-import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=22";
+import * as THREE from "../vendor/three.module.js?v=23";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=23";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=23";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -20,6 +20,7 @@ function makeBackTexture() {
   ctx.fillText("BANG!", canvas.width / 2, canvas.height / 2);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.userData = { url: canvas.toDataURL() };
   return texture;
 }
 
@@ -28,6 +29,7 @@ function loadTexture(url, cache) {
   if (cache.has(url)) return cache.get(url);
   const texture = new THREE.TextureLoader().load(url);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.userData = { url };
   cache.set(url, texture);
   return texture;
 }
@@ -274,7 +276,7 @@ export function mountTable(canvas) {
       mesh.rotation.x = -Math.PI / 2;
       mesh.userData.kind = zone.kind;
       mesh.userData.baseY = mesh.position.y;
-      mesh.userData.image = typeof texture === "string" ? texture : (texture?.image?.toDataURL?.() || "");
+      mesh.userData.image = texture?.userData?.url || texture?.image?.src || "";
       if (playerId) {
         mesh.userData.playerId = playerId;
         mesh.userData.peek = playerId !== mine;
@@ -354,6 +356,7 @@ export function mountTable(canvas) {
       mesh.rotation.x = -Math.PI / 2;
       mesh.userData.kind = "gear";
       mesh.userData.gear = true;
+      mesh.userData.image = texture?.userData?.url || "";
       mesh.userData.playerId = player.id;
       mesh.userData.peek = false;
       mesh.userData.baseY = mesh.position.y;
@@ -502,15 +505,45 @@ export function mountTable(canvas) {
     pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
     const hits = raycaster.intersectObjects(scene.children, true);
-    let obj = hits[0]?.object;
-    while (obj && !obj.userData?.playerId && !obj.userData?.peek) obj = obj.parent;
+    let obj = null;
+    for (const hit of hits) {
+      let cursor = hit.object;
+      while (cursor && !cursor.userData?.image) cursor = cursor.parent;
+      if (cursor?.userData?.image) {
+        obj = cursor;
+        break;
+      }
+    }
     if (!obj) return null;
     return {
       playerId: obj.userData.playerId || "",
       image: obj.userData.image || "",
       peek: Boolean(obj.userData.peek),
       gear: Boolean(obj.userData.gear),
+      kind: obj.userData.kind || "",
+      box: meshScreenBox(obj),
     };
+  }
+
+  function meshScreenBox(mesh) {
+    const w = mesh.geometry?.parameters?.width;
+    const h = mesh.geometry?.parameters?.height;
+    if (!w || !h) return null;
+    mesh.updateMatrixWorld();
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const corner of [[-w / 2, -h / 2], [w / 2, -h / 2], [-w / 2, h / 2], [w / 2, h / 2]]) {
+      const point = new THREE.Vector3(corner[0], corner[1], 0).applyMatrix4(mesh.matrixWorld).project(camera);
+      const x = (point.x * 0.5 + 0.5) * width;
+      const y = (-point.y * 0.5 + 0.5) * height;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+    return { left: minX, top: minY, width: Math.max(8, maxX - minX), height: Math.max(8, maxY - minY) };
   }
 
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
@@ -520,7 +553,8 @@ export function mountTable(canvas) {
   }, { passive: true });
   canvas.addEventListener("pointerdown", (event) => {
     if (event.target !== canvas) return;
-    fingers.set(event.pointerId, { x: event.clientX, y: event.clientY, ox: event.clientX, oy: event.clientY, button: event.button });
+    const startHit = event.button === 0 ? pick(event.clientX, event.clientY) : null;
+    fingers.set(event.pointerId, { x: event.clientX, y: event.clientY, ox: event.clientX, oy: event.clientY, button: event.button, startHit });
     try { canvas.setPointerCapture(event.pointerId); } catch { /* already captured */ }
   });
   canvas.addEventListener("pointermove", (event) => {
@@ -554,6 +588,10 @@ export function mountTable(canvas) {
     fingers.delete(event.pointerId);
     if (!prev || fingers.size) return;
     const moved = Math.hypot(event.clientX - prev.ox, event.clientY - prev.oy);
+    if (moved >= 8 && prev.button === 0 && prev.startHit?.kind === "deck") {
+      onZoom?.(prev.startHit);
+      return;
+    }
     if (moved < 8 && prev.button === 0) {
       const now = Date.now();
       if (now - lastTap < 320) {
@@ -563,14 +601,14 @@ export function mountTable(canvas) {
       }
       lastTap = now;
       const info = pick(event.clientX, event.clientY);
-      if (info?.gear) onGear?.(info);
-      else if (info?.peek && info.image) onPeek?.(info);
+      if (info?.image) onZoom?.(info);
     } else settleView();
   }
   canvas.addEventListener("pointerup", endFinger);
   canvas.addEventListener("pointercancel", (event) => fingers.delete(event.pointerId));
   let onPeek = null;
   let onGear = null;
+  let onZoom = null;
   let onSpots = null;
 
   resize();
@@ -588,6 +626,7 @@ export function mountTable(canvas) {
     resetView,
     setPeek(fn) { onPeek = fn; },
     setGear(fn) { onGear = fn; },
+    setZoom(fn) { onZoom = fn; },
     setSpots(fn) { onSpots = fn; },
     stop() {
       running = false;

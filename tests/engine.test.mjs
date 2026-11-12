@@ -31,6 +31,11 @@ function table(n = 4, seed = 7) {
 
 function drain(state, limit = 30) {
   let n = 0;
+  while (n < limit && state.turnPhase === "draw" && !state.prompt && state.currentId) {
+    const res = dispatch(state, state.currentId, { type: "draw" });
+    assert.equal(res.ok, true, res.error);
+    n += 1;
+  }
   while (state.prompt && n < limit) {
     const kind = state.prompt.kind;
     const who = state.prompt.playerId;
@@ -94,6 +99,7 @@ test("roles, sheriff bonus, private view, and first turn", () => {
     const sheriff = state.players.find((p) => p.role === "sheriff");
     assert.equal(state.currentId, sheriff.id);
     assert.equal(sheriff.hp, sheriff.maxHp);
+    if (state.turnPhase === "draw") assert.equal(dispatch(state, sheriff.id, { type: "draw" }).ok, true);
     assert.ok(sheriff.hand.length >= sheriff.maxHp + 2);
     const base = sheriff.character === "paul" || sheriff.character === "elgringo" ? 3 : 4;
     assert.equal(sheriff.maxHp, base + 1);
@@ -406,6 +412,11 @@ test("full games reach a win without throwing", () => {
         continue;
       }
       if (state.phase !== "play") break;
+      if (state.turnPhase === "draw") {
+        const res = dispatch(state, state.currentId, { type: "draw" });
+        assert.equal(res.ok, true, res.error);
+        continue;
+      }
       const id = state.currentId;
       const view = projectView(state, id);
       const me = state.players.find((p) => p.id === id);
