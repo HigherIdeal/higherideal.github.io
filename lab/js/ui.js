@@ -274,7 +274,7 @@ function seatHtml(p, view) {
   const weapon = me?.equipment?.weapon;
   const range = weapon ? (CARD_INFO[weapon.type]?.range || 1) : 1;
   const reachable = Boolean(me?.alive && p.alive && p.distance != null && p.distance <= range);
-  const distanceClass = selected || reachable ? "is-reachable" : "is-distant";
+  const distanceClass = view.phase !== "play" || !me?.alive ? "" : (selected || reachable ? "is-reachable" : "is-distant");
   const activeTurn = p.id === view.currentId ? "is-turn" : "";
   return `<article class="seat ${selected ? "is-target" : ""} ${offline ? "is-offline" : ""} ${distanceClass} ${activeTurn}" data-player="${esc(p.id)}" data-presence="${offline ? "off" : "on"}" ${selected ? `data-legal-target="1"` : ""}>
     ${stackHtml(`seat-${p.id}`, seatCards(p, view))}
