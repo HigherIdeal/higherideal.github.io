@@ -4,6 +4,7 @@ import { baseDeckTemplates } from "../lab/js/cards.js";
 import {
   addPlayer,
   autoChoice,
+  claimSeat,
   createLobby,
   dispatch,
   expireDisconnects,
@@ -491,5 +492,20 @@ test("a dropped player keeps the seat through the grace period", () => {
   assert.equal(lobby.players.some((p) => p.id === "p1"), false);
   markDisconnect(lobby, "h", 10_000);
   assert.equal(lobby.players[0].id, "h");
-  assert.equal(lobby.players[0].connected, true);
+  assert.equal(lobby.players[0].connected, false);
+  assert.equal(expireDisconnects(lobby, 10_000 + 120_000), false);
+});
+
+test("a disconnected nickname reclaims the same seat and its hand", () => {
+  const state = table(2, 3);
+  const seat = state.players[1];
+  seat.hand = [{ id: "secret", type: "bang", suit: "hearts", rank: "A" }];
+  markDisconnect(state, seat.id);
+  const rejected = claimSeat(state, "other", seat.nickname);
+  assert.equal(rejected.ok, true);
+  assert.equal(state.players[1].id, "other");
+  assert.equal(state.players[1].hand[0].id, "secret");
+  state.players[1].connected = true;
+  const duplicate = claimSeat(state, "third", seat.nickname);
+  assert.equal(duplicate.ok, false);
 });

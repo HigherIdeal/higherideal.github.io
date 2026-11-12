@@ -136,7 +136,7 @@ function boxOf(cam, center, cardW, cardD, width, height, oriented = false) {
     : projectCard(cam, center, cardW, cardD, width, height);
 }
 
-export function placeLayout(width, height, count, cardW, radiusScale = 1) {
+export function placeLayout(width, height, count, cardW, radiusScale = 1, stacks = []) {
   const cam = cameraRig(width, height);
   const play = playField(width, height);
   const cardD = cardW * 1.45;
@@ -197,6 +197,26 @@ export function placeLayout(width, height, count, cardW, radiusScale = 1) {
       h: 22,
     };
     let boxes = compact ? [character] : [role, character];
+    const gearCount = Math.max(0, stacks[i] || 0);
+    if (gearCount >= 1) {
+      const gearW = cardW * (1 + 0.3 * (gearCount - 1));
+      const span = Math.hypot(world.x, world.z) || 1;
+      const shift = cardD * 0.18;
+      const gearCenter = {
+        x: world.x + (world.x / span) * shift,
+        y: 0.02,
+        z: world.z + (world.z / span) * shift,
+      };
+      const gearBox = orientedBox(cam, gearCenter, gearW, cardD, width, height);
+      if (!gearBox) return null;
+      boxes.push({
+        id: `seat-${i}-gear`,
+        kind: "gear",
+        seat: i,
+        ...gearBox,
+        world: { ...gearCenter, w: gearW, d: cardD, cards: gearCount },
+      });
+    }
     if (!compact && i !== 0) {
       let handY = label.y + label.h + probeBox.h * 0.72;
       let spread = stepX;
@@ -331,13 +351,32 @@ function phoneFits(leaves) {
   const cards = leaves.filter((zone) => zone.world && zone.kind !== "label" && zone.kind !== "deck" && zone.kind !== "discard");
   for (let i = 0; i < cards.length; i += 1) {
     for (let j = i + 1; j < cards.length; j += 1) {
+      if (cards[i].seat != null && cards[i].seat === cards[j].seat) continue;
       if (!worldSeparated(cards[i], cards[j])) return false;
     }
   }
   return true;
 }
 
-export function solveProjectedLayout(width, height, playerCount) {
+function zonesClear(leaves, phone) {
+  if (phone) return phoneFits(leaves);
+  for (let i = 0; i < leaves.length; i += 1) {
+    for (let j = i + 1; j < leaves.length; j += 1) {
+      const a = leaves[i];
+      const b = leaves[j];
+      if (a.seat != null && a.seat === b.seat) continue;
+      if (rectsOverlap(a, b, 2)) return false;
+    }
+  }
+  return true;
+}
+
+function cardCeiling(count, width) {
+  if (count > 4) return 3.6;
+  return width < 800 ? 0.4 : 0.9;
+}
+
+export function solveProjectedLayout(width, height, playerCount, stacks = []) {
   const count = Math.max(1, Math.min(7, playerCount));
   const play = playField(width, height);
   const phone = width < 800;
@@ -345,12 +384,12 @@ export function solveProjectedLayout(width, height, playerCount) {
   for (let radius = 100; radius >= 86; radius -= 2) {
     const radiusScale = radius / 100;
     let lo = 0.18;
-    let hi = 3.6;
+    let hi = cardCeiling(count, width);
     let fit = null;
     for (let step = 0; step < 14; step += 1) {
       const mid = (lo + hi) / 2;
-      const laid = placeLayout(width, height, count, mid, radiusScale);
-      const clear = laid && (phone ? phoneFits(laid.leaves) : !layoutOverlaps(laid.leaves, 2));
+      const laid = placeLayout(width, height, count, mid, radiusScale, stacks);
+      const clear = laid && zonesClear(laid.leaves, phone);
       if (clear) {
         fit = laid;
         lo = mid;
@@ -361,7 +400,7 @@ export function solveProjectedLayout(width, height, playerCount) {
       break;
     }
   }
-  if (!best) best = placeLayout(width, height, count, 0.18, 0.86) || { seats: [], leaves: [], deck: null, discard: null, scale: 0.18, play, deckCenter: null };
+  if (!best) best = placeLayout(width, height, count, 0.18, 0.86, stacks) || { seats: [], leaves: [], deck: null, discard: null, scale: 0.18, play, deckCenter: null };
   return { ...best, play, width, height };
 }
 

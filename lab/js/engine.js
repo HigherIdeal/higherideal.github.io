@@ -9,8 +9,8 @@ import {
   cardLabel,
   characterById,
   rolesForCount,
-} from "./cards.js?v=20";
-import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=20";
+} from "./cards.js?v=21";
+import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=21";
 
 const WEAPONS = new Set(WEAPON_TYPES);
 
@@ -51,6 +51,62 @@ function uniqueNickname(state, nickname, exceptId) {
   return `${base}(${n})`;
 }
 
+function replaceId(value, oldId, newId) {
+  return value === oldId ? newId : value;
+}
+
+export function rebindPlayer(state, oldId, newId) {
+  if (!state || !oldId || !newId || oldId === newId) return state;
+  const seat = state.players.find((p) => p.id === oldId);
+  if (seat) seat.id = newId;
+  state.hostId = replaceId(state.hostId, oldId, newId);
+  state.currentId = replaceId(state.currentId, oldId, newId);
+  if (state.prompt) {
+    state.prompt.playerId = replaceId(state.prompt.playerId, oldId, newId);
+    state.prompt.sourceId = replaceId(state.prompt.sourceId, oldId, newId);
+  }
+  if (state.combat) {
+    state.combat.sourceId = replaceId(state.combat.sourceId, oldId, newId);
+    state.combat.defenderId = replaceId(state.combat.defenderId, oldId, newId);
+    state.combat.duelTurn = replaceId(state.combat.duelTurn, oldId, newId);
+    if (Array.isArray(state.combat.queue)) state.combat.queue = state.combat.queue.map((id) => replaceId(id, oldId, newId));
+  }
+  if (state.store) {
+    state.store.pickerId = replaceId(state.store.pickerId, oldId, newId);
+    if (Array.isArray(state.store.order)) state.store.order = state.store.order.map((id) => replaceId(id, oldId, newId));
+  }
+  if (state.dmg) {
+    state.dmg.targetId = replaceId(state.dmg.targetId, oldId, newId);
+    state.dmg.sourceId = replaceId(state.dmg.sourceId, oldId, newId);
+  }
+  if (state.arc) {
+    state.arc.fromId = replaceId(state.arc.fromId, oldId, newId);
+    state.arc.toId = replaceId(state.arc.toId, oldId, newId);
+  }
+  return state;
+}
+
+export function claimSeat(state, id, nickname) {
+  const name = cleanName(nickname);
+  const byId = state.players.find((p) => p.id === id);
+  if (byId) {
+    byId.connected = true;
+    delete byId.disconnectedAt;
+    return { ok: true, state };
+  }
+  const byName = state.players.find((p) => p.nickname === name);
+  if (byName) {
+    if (byName.connected !== false) {
+      return { ok: false, error: `${name} 님은 이미 접속 중입니다. 다른 닉네임을 사용하세요.` };
+    }
+    rebindPlayer(state, byName.id, id);
+    byName.connected = true;
+    delete byName.disconnectedAt;
+    return { ok: true, state };
+  }
+  return addPlayer(state, id, name);
+}
+
 export function addPlayer(state, id, nickname) {
   const existing = state.players.find((p) => p.id === id);
   if (existing) {
@@ -60,7 +116,7 @@ export function addPlayer(state, id, nickname) {
     return { ok: true, state };
   }
   if (state.phase !== "lobby") {
-    return { ok: false, error: "이미 시작된 판입니다. 앉아 있던 사람만 다시 들어올 수 있습니다." };
+    return { ok: false, error: "진행 중인 판입니다. 같은 닉네임으로 다시 들어오거나, 방장이 종료한 뒤 새 판을 시작하세요." };
   }
   if (state.players.length >= MAX_PLAYERS) {
     return { ok: false, error: "방이 가득 찼습니다. (최대 7명)" };
@@ -85,7 +141,7 @@ export function addPlayer(state, id, nickname) {
 
 export function markDisconnect(state, id, now = Date.now()) {
   const p = player(state, id);
-  if (!p || p.id === state.hostId) return state;
+  if (!p) return state;
   p.connected = false;
   p.disconnectedAt = now;
   return state;
@@ -110,9 +166,10 @@ export function dispatch(state, playerId, action) {
 }
 
 function handle(state, playerId, action) {
+  if (state.paused && !["resume", "fresh", "chat"].includes(action.type)) return "일시정지 중입니다.";
   switch (action.type) {
     case "chat": return chat(state, playerId, action.text);
-    case "start": return startGame(state, playerId);
+    case "start": return startGame(state, playerId, action);
     case "choose": return chooseCharacter(state, playerId, action.characterId);
     case "play": return playCard(state, playerId, action);
     case "end": return endTurn(state, playerId);
@@ -121,8 +178,55 @@ function handle(state, playerId, action) {
     case "sid": return sidHeal(state, playerId, action.cardIds || []);
     case "aim": return setAim(state, playerId, action.targetId);
     case "again": return playAgain(state, playerId);
+    case "pause": return setPaused(state, playerId, true);
+    case "resume": return setPaused(state, playerId, false);
+    case "fresh": return freshGame(state, playerId);
     default: return "알 수 없는 행동입니다.";
   }
+}
+
+function setPaused(state, playerId, paused) {
+  if (playerId !== state.hostId) return "방장만 할 수 있습니다.";
+  if (state.phase === "lobby") return "아직 시작하지 않은 판입니다.";
+  state.paused = paused;
+  state.arc = null;
+  log(state, paused ? "방장이 판을 일시정지했습니다." : "방장이 판을 재개했습니다.");
+  return null;
+}
+
+function freshGame(state, playerId) {
+  if (playerId !== state.hostId) return "방장만 판을 종료할 수 있습니다.";
+  const players = state.players.map((p) => ({
+    id: p.id,
+    nickname: p.nickname,
+    seat: p.seat,
+    connected: p.connected !== false,
+    alive: true,
+    role: null,
+    character: null,
+    choices: null,
+    hp: 0,
+    maxHp: 0,
+    hand: [],
+    equipment: emptyEquip(),
+  }));
+  state.players = players;
+  state.phase = "lobby";
+  state.paused = false;
+  state.winner = null;
+  state.deck = [];
+  state.discard = [];
+  state.prompt = null;
+  state.combat = null;
+  state.store = null;
+  state.dmg = null;
+  state.currentId = null;
+  state.turnPhase = null;
+  state.bangsPlayed = 0;
+  state.arc = null;
+  state.events = [];
+  log(state, "방장이 판을 종료하고 대기실로 돌아왔습니다.");
+  return null;
 }
 
 function chat(state, playerId, text) {
@@ -135,7 +239,7 @@ function chat(state, playerId, text) {
   return null;
 }
 
-function startGame(state, playerId) {
+function startGame(state, playerId, action = {}) {
   if (playerId !== state.hostId) return "방장만 시작할 수 있습니다.";
   if (state.phase !== "lobby") return "이미 시작된 판입니다.";
   const n = state.players.length;
@@ -153,6 +257,7 @@ function startGame(state, playerId) {
     p.alive = true;
     p.connected = p.connected !== false;
   });
+  if (action.passHash?.salt && action.passHash?.hash) state.hostPass = { salt: action.passHash.salt, hash: action.passHash.hash };
   state.deck = shuffle(state, baseDeckTemplates().map((c) => mint(state, c.type, c.suit, c.rank)));
   state.discard = [];
   state.winner = null;
@@ -245,6 +350,7 @@ function startTurn(state, id) {
   state.turnPhase = "start";
   state.prompt = null;
   state.combat = null;
+  state.arc = null;
   log(state, `${p.nickname} 님의 턴입니다.`);
   if (p.equipment.dynamite) beginDynamite(state);
   else beginJail(state);
@@ -1534,6 +1640,7 @@ export function projectView(state, viewerId) {
     discardCount: state.discard.length,
     discardTop: state.discard.length ? state.discard[state.discard.length - 1] : null,
     log: state.log.slice(-50),
+    paused: Boolean(state.paused),
     events: (state.events || []).slice(-16),
     arc: state.arc && (state.arc.phase === "preview" || Date.now() - state.arc.at < 1600)
       ? { fromId: state.arc.fromId, toId: state.arc.toId, phase: state.arc.phase, at: state.arc.at }

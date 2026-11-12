@@ -1,8 +1,8 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=20";
-import { naturalKorean } from "./engine.js?v=20";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=20";
-import { solveProjectedLayout } from "./layout.js?v=20";
-import { mountTable } from "./table3d.js?v=20";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=21";
+import { naturalKorean } from "./engine.js?v=21";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=21";
+import { solveProjectedLayout } from "./layout.js?v=21";
+import { mountTable } from "./table3d.js?v=21";
 
 const ui = {
   selected: null,
@@ -16,6 +16,7 @@ const ui = {
   wired: false,
   spread: null,
   spreadPick: null,
+  hostAsk: null,
 };
 
 function esc(value) {
@@ -105,6 +106,17 @@ function paint(app, ctx) {
     wireSpread();
     wireFan();
   }
+  if (ui.fan && view) {
+    const me = view.players?.find((p) => p.id === view.yourId);
+    const ids = new Set((me?.hand || []).map((card) => card.id));
+    if (!ui.fan.cards.every((card) => ids.has(card.id))) closeFan();
+    else ui.fan.cards = me.hand;
+  }
+  if (view?.arc) globalThis.__bangLocalArc = null;
+  else if ((view?.seq || 0) !== globalThis.__bangAimSeq) {
+    globalThis.__bangLocalArc = null;
+    globalThis.__bangAimSeq = view?.seq || 0;
+  }
   renderSpread(ctx);
   syncTable(app, view);
   syncReveal(view);
@@ -178,8 +190,10 @@ function lobbyHtml(ctx) {
         </li>`).join("")}
       </ol>
       ${host
-        ? `<button class="enter-btn" type="button" data-action="start" ${ready ? "" : "disabled"}>${ready ? "게임 시작" : `${count}명 · 2명부터`}</button>`
-        : `<p class="footnote">${esc(me?.nickname || "")} 님, 방장이 시작하기를 기다리는 중입니다.</p>`}
+        ? `<label class="field"><span>방장 암호</span><input data-field="host-pass" type="password" maxlength="24" autocomplete="new-password" placeholder="일시정지·종료에 사용" /></label>
+          <button class="enter-btn" type="button" data-action="start" ${ready ? "" : "disabled"}>${ready ? "게임 시작" : `${count}명 · 2명부터`}</button>
+          <p class="footnote">진행 중인 판이 남아 있으면 종료로 대기실을 비울 수 있습니다. 떠난 사람은 같은 닉네임으로 다시 앉습니다.</p>`
+        : `<p class="footnote">${esc(me?.nickname || "")} 님, 방장이 시작하기를 기다리는 중입니다. 진행 중인 판이면 같은 닉네임으로 들어와 자리를 이어 받으세요.</p>`}
       <button class="text-btn" type="button" data-action="leave">나가기</button>
     </section>
     ${toastHtml(ctx)}
@@ -242,6 +256,7 @@ function tableHtml(ctx) {
         <p>${esc(phaseLine(view, current))}</p>
         ${soundButtonHtml()}
         <button type="button" data-action="reset-view">시점</button>
+        ${view.yourId === view.hostId ? `<button type="button" data-action="pause">일시정지</button><button type="button" data-action="resume">재개</button><button type="button" data-action="fresh">종료</button>` : ""}
        <button type="button" data-action="help">도움말</button>
       </header>
       <div class="board">
@@ -263,6 +278,8 @@ function tableHtml(ctx) {
       </div>
       </div>
     </section>
+    ${view.paused ? `<div class="pause-overlay" role="status">일시정지</div>` : ""}
+    ${hostPassHtml()}
     ${pickerHtml(view)}
     ${toastHtml(ctx)}
     ${helpHtml()}
@@ -509,6 +526,17 @@ function endHtml(view) {
   </div>`;
 }
 
+function hostPassHtml() {
+  if (!ui.hostAsk) return "";
+  const labels = { pause: "일시정지", resume: "재개", fresh: "종료", start: "게임 시작" };
+  return `<form class="host-pass" data-host-pass="1">
+    <p>${esc(labels[ui.hostAsk] || "확인")} · 방장 암호</p>
+    <input data-field="host-pass" type="password" maxlength="24" autocomplete="current-password" />
+    <button class="enter-btn" type="submit">확인</button>
+    <button class="text-btn" type="button" data-action="host-cancel">취소</button>
+  </form>`;
+}
+
 function phaseLine(view, current) {
   if (view.phase === "end") return "모든 역할이 공개되었습니다.";
   const name = current?.nickname || "";
@@ -557,6 +585,20 @@ function onSubmit(event, app) {
     ctx.onEnter(nickname, code);
     return;
   }
+  if (event.target.matches("[data-host-pass]")) {
+    event.preventDefault();
+    const pass = event.target.querySelector("[data-field=host-pass]")?.value || "";
+    const type = ui.hostAsk;
+    ui.hostAsk = null;
+    if (!type) return;
+    if (!pass) {
+      ctx.onToast?.("암호를 입력하세요.");
+      mount(app, ctx);
+      return;
+    }
+    ctx.onAction({ type, pass });
+    mount(app, ctx);
+  }
 }
 
 function onClick(event, app) {
@@ -576,7 +618,26 @@ function onClick(event, app) {
   if (event.target.closest("[data-action=close-help]")) app.querySelector("#help")?.close();
   if (event.target.closest("[data-action=takeover]")) ctx.onTakeOver();
   if (event.target.closest("[data-action=leave]")) ctx.onLeave();
-  if (event.target.closest("[data-action=start]")) ctx.onAction({ type: "start" });
+  if (event.target.closest("[data-action=host-cancel]")) {
+    ui.hostAsk = null;
+    mount(app, ctx);
+    return;
+  }
+  if (event.target.closest("[data-action=start]")) {
+    const pass = app.querySelector("[data-field=host-pass]")?.value || "";
+    if (!pass) {
+      ctx.onToast?.("방장 암호를 정하세요.");
+      return;
+    }
+    ctx.onAction({ type: "start", pass });
+    return;
+  }
+  const hostAct = event.target.closest("[data-action=pause], [data-action=resume], [data-action=fresh]");
+  if (hostAct) {
+    ui.hostAsk = hostAct.dataset.action;
+    mount(app, ctx);
+    return;
+  }
   if (event.target.closest("[data-action=again]")) ctx.onAction({ type: "again" });
   if (event.target.closest("[data-action=end]")) ctx.onAction({ type: "end" });
   if (event.target.closest("[data-char]")) {
@@ -652,8 +713,9 @@ function onClick(event, app) {
   const seatBtn = event.target.closest(".seat-btn");
   if (seatBtn) {
     const id = seatBtn.dataset.player;
-    if (ui.selected && id && isTarget(view, id)) {
-      playAt(ctx, ui.selected, id);
+    if (ui.selected && id) {
+      if (isTarget(view, id)) playAt(ctx, ui.selected, id);
+      else ctx.onToast?.("사정거리 밖입니다.");
       return;
     }
     if (id && id !== view?.yourId) {
@@ -697,6 +759,8 @@ function playAt(ctx, cardId, targetId) {
     return;
   }
   ui.selected = null;
+  globalThis.__bangLocalArc = null;
+  closeFan();
   ctx.onAction({ type: "play", cardId, targetId });
 }
 
@@ -799,6 +863,8 @@ function runSpreadAction(ctx, act) {
   if (act === "play" && cardId) {
     ui.selected = null;
     closeSpread();
+    closeFan();
+    globalThis.__bangLocalArc = null;
     ctx.onAction({ type: "play", cardId });
     return;
   }
@@ -806,12 +872,14 @@ function runSpreadAction(ctx, act) {
     ui.selected = cardId;
     ui.picker = null;
     closeSpread();
+    closeFan();
     mount(document.querySelector("#app"), ctx);
     return;
   }
   if (act === "respond" && cardId) {
     const choice = view?.prompt?.kind === "save" ? "beer" : "card";
     closeSpread();
+    closeFan();
     ctx.onAction({ type: "respond", choice, cardId });
     return;
   }
@@ -966,7 +1034,9 @@ function syncTable(app, view) {
       if (!ui.gl?.pick || !ctx?.view || !ui.selected) return;
       const hit = ui.gl.pick(event.clientX, event.clientY);
       const id = hit?.playerId || "";
-      if (id && isTarget(ctx.view, id)) playAt(ctx, ui.selected, id);
+      if (!id) return;
+      if (isTarget(ctx.view, id)) playAt(ctx, ui.selected, id);
+      else ctx.onToast?.("사정거리 밖입니다.");
     });
   }
   if (ui.gl !== false && (!ui.gl || ui.glCanvas !== canvas)) {
@@ -1057,17 +1127,19 @@ function wireFan() {
     const me = ctx?.view?.players?.find((p) => p.id === ctx.view.yourId);
     const cards = me?.hand || [];
     if (!cards.length) return;
+    const tapped = event.target.closest("[data-card-id]");
+    const start = Math.max(0, cards.findIndex((card) => card.id === tapped?.dataset.cardId));
     event.preventDefault();
     ui.fan = {
       id: event.pointerId,
       originX: event.clientX,
       originY: event.clientY,
       lastY: event.clientY,
-      drag: 0,
-      target: 0,
+      drag: -start,
+      target: -start,
       holding: true,
       cards,
-      focus: 0,
+      focus: start,
     };
     try { hand.setPointerCapture(event.pointerId); } catch { /* pointer still reaches window */ }
     ensureFan().hidden = false;
@@ -1075,10 +1147,17 @@ function wireFan() {
   });
   window.addEventListener("pointermove", (event) => {
     const fan = ui.fan;
-    if (!fan?.holding || event.pointerId !== fan.id) return;
+    if (!fan) return;
     const limit = Math.max(0, fan.cards.length - 1);
-    fan.target = Math.max(-limit, Math.min(0, (fan.originX - event.clientX) / 70));
-    fan.lastY = event.clientY;
+    if (fan.holding && event.pointerId === fan.id) {
+      fan.target = Math.max(-limit, Math.min(0, fan.drag + (fan.originX - event.clientX) / 46));
+      fan.lastY = event.clientY;
+      fanFrame();
+      return;
+    }
+    if (fan.panning && event.pointerId === fan.panId) {
+      fan.target = Math.max(-limit, Math.min(0, fan.panBase + (fan.panX - event.clientX) / 46));
+    }
   });
   window.addEventListener("pointerup", finishFan);
   window.addEventListener("pointercancel", finishFan);
@@ -1091,11 +1170,39 @@ function ensureFan() {
   layer.id = "hand-fan";
   layer.hidden = true;
   document.body.appendChild(layer);
+  layer.addEventListener("pointerdown", (event) => {
+    if (!ui.fan || event.target.closest(".fan-actions, [data-spread-act]")) return;
+    const card = event.target.closest(".fan-card");
+    if (card) {
+      const index = ui.fan.cards.findIndex((item) => item.id === card.dataset.cardId);
+      if (index >= 0) {
+        ui.fan.target = -index;
+        ui.fan.drag = -index;
+        ui.fan.focus = index;
+        fanFrame();
+      }
+    }
+    ui.fan.panning = true;
+    ui.fan.panId = event.pointerId;
+    ui.fan.panX = event.clientX;
+    ui.fan.panBase = ui.fan.target;
+  });
   layer.addEventListener("click", (event) => {
-    if (event.target.id === "hand-fan") closeFan();
+    if (event.target.id === "hand-fan" || event.target.classList.contains("fan-stage")) closeFan();
     const act = event.target.closest("[data-spread-act]");
     const ctx = document.querySelector("#app")?.__ctx;
     if (act && ctx) runSpreadAction(ctx, act.dataset.spreadAct);
+  });
+  window.addEventListener("keydown", (event) => {
+    if (!ui.fan || ui.fan.holding) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const limit = ui.fan.cards.length - 1;
+    const next = Math.max(0, Math.min(limit, ui.fan.focus + (event.key === "ArrowRight" ? 1 : -1)));
+    ui.fan.target = -next;
+    ui.fan.drag = -next;
+    ui.fan.focus = next;
+    fanFrame();
   });
   return layer;
 }
@@ -1151,6 +1258,7 @@ function finishFan(event) {
   const drop = event.clientY - fan.originY;
   const card = fan.cards[fan.focus];
   fan.holding = false;
+  fan.panning = false;
   const ctx = document.querySelector("#app")?.__ctx;
   const prompt = ctx?.view?.prompt;
   if (prompt?.mine && prompt.kind === "discard" && card && drop > 54) {

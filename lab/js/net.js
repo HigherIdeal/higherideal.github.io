@@ -1,6 +1,6 @@
-import { ENTRY_CODE, ROOM_ID } from "./config.js?v=20";
-import { addPlayer, autoChoice, createLobby, dispatch, expireDisconnects, markDisconnect, projectView } from "./engine.js?v=20";
-import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=20";
+import { ENTRY_CODE, ROOM_ID } from "./config.js?v=21";
+import { addPlayer, autoChoice, claimSeat, createLobby, dispatch, expireDisconnects, markDisconnect, projectView, rebindPlayer } from "./engine.js?v=21";
+import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=21";
 
 const HOST_LOST_MS = 20000;
 const STALE_MS = 45000;
@@ -8,6 +8,26 @@ const LISTEN_MS = 4000;
 
 function newId() {
   return crypto.randomUUID();
+}
+
+async function sha256(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function passRecord(password) {
+  const salt = crypto.randomUUID();
+  return { salt, hash: await sha256(`${salt}:${password}`) };
+}
+
+async function passOk(record, password) {
+  if (!record?.salt || !record?.hash || !password) return false;
+  return (await sha256(`${record.salt}:${password}`)) === record.hash;
+}
+
+function plainName(nickname) {
+  const text = String(nickname || "").replace(/\s+/g, " ").trim().slice(0, 12);
+  return text || "무명";
 }
 
 export function connect({ playerId, nickname, onView, onStatus, onToast }) {
@@ -32,6 +52,8 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   let ready = false;
   let openedAt = 0;
   let socketOpen = false;
+  let pendingCrown = null;
+  let soloSince = 0;
   const connToken = newId();
   const helloAt = Date.now();
   const wasHost = sessionStorage.getItem("bang-role") === "host";
@@ -43,7 +65,14 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     try {
       const raw = JSON.parse(localStorage.getItem(snapKey) || "null");
       const saved = raw?.roomId === namespace ? raw.state : null;
-      if (saved?.players?.some((p) => p.id === playerId)) return saved;
+      if (!saved?.players) return null;
+      if (saved.players.some((p) => p.id === playerId)) return saved;
+      const seat = saved.players.find((p) => p.nickname === plainName(nickname));
+      if (!seat) return null;
+      rebindPlayer(saved, seat.id, playerId);
+      seat.connected = true;
+      delete seat.disconnectedAt;
+      return saved;
     } catch { /* ignore */ }
     return null;
   }
@@ -120,13 +149,15 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     if (!isHost || !state || !fromId) return;
     if (action.type !== "join" && action.type !== "disconnect" && action.actionId && seen.has(action.actionId)) return;
     if (action.type === "join") {
-      const result = addPlayer(state, fromId, action.nickname);
+      const result = claimSeat(state, fromId, action.nickname);
       if (!result.ok) fail(fromId, result.error);
       else broadcast();
       return;
     }
     if (action.type === "disconnect") {
       markDisconnect(state, fromId);
+      const info = directory.get(fromId);
+      if (info) info.seen = 0;
       broadcast();
       return;
     }
@@ -179,7 +210,9 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     hostPeer = playerId;
     lastBeat = Date.now();
     sessionStorage.setItem("bang-role", "host");
-    const snap = readSnap();
+    const crowned = pendingCrown;
+    pendingCrown = null;
+    const snap = crowned?.players ? crowned : readSnap();
     if (snap) {
       state = snap;
       state.hostId = playerId;
@@ -267,6 +300,10 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
 
   async function ingest(msg, via) {
     if (!msg || destroyed || steppedAside) return;
+    if (msg.kind === "crown" && msg.state?.players) {
+      pendingCrown = msg.state;
+      return;
+    }
     if (msg.kind === "hello") {
       if (isHost) acceptHello(msg);
       else notePeer(msg);
@@ -291,6 +328,8 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       notePeer(msg);
       if (isHost) {
         if (msg.from < playerId) {
+          const info = directory.get(msg.from);
+          if (info?.pub && state) direct(msg.from, { kind: "crown", state }, info.pub, info.slug);
           hostPeer = msg.from;
           lastBeat = Date.now();
           stepDown();
@@ -369,9 +408,17 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
 
   function onLeave(slug) {
     if (!slug) return;
-    for (const info of directory.values()) {
-      if (info.slug === slug) info.relayLeft = Date.now();
+    let changed = false;
+    for (const [id, info] of directory) {
+      if (info.slug !== slug) continue;
+      info.relayLeft = Date.now();
+      if (isHost && state && id !== playerId) {
+        markDisconnect(state, id);
+        info.seen = 0;
+        changed = true;
+      }
     }
+    if (changed) broadcast();
   }
 
   const heartbeat = setInterval(() => {
@@ -391,6 +438,19 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     if (!state || document.hidden) return;
     const now = Date.now();
     let changed = expireDisconnects(state, now);
+    if (state.arc?.phase === "flash" && now - state.arc.at > 1600) {
+      state.arc = null;
+      changed = true;
+    }
+    const othersLive = state.players.some((p) => p.id !== playerId && p.connected !== false);
+    if (state.phase !== "lobby" && !othersLive) {
+      if (!soloSince) soloSince = now;
+      else if (now - soloSince > 3 * 60 * 1000) {
+        dispatch(state, playerId, { type: "fresh" });
+        soloSince = 0;
+        changed = true;
+      }
+    } else soloSince = 0;
     for (const p of state.players) {
       if (p.id === playerId) continue;
       const info = directory.get(p.id);
@@ -416,18 +476,38 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       return;
     }
     if (!quietSince.has(actor)) quietSince.set(actor, Date.now());
-    if (Date.now() - quietSince.get(actor) > 18000) {
+    if (Date.now() - quietSince.get(actor) > 1000) {
       const choice = autoChoice(state, actor);
       if (choice) apply(actor, { ...choice, actionId: newId() });
       quietSince.set(actor, Date.now());
     }
   }, 2000);
 
+  function leaveSeat() {
+    if (steppedAside || destroyed) return;
+    if (isHost && state) {
+      markDisconnect(state, playerId);
+      broadcast();
+      return;
+    }
+    const info = directory.get(hostPeer);
+    if (info?.pub) {
+      direct(hostPeer, {
+        kind: "action",
+        from: playerId,
+        token: connToken,
+        at: helloAt,
+        action: { type: "disconnect", actionId: newId() },
+      }, info.pub, info.slug);
+    }
+  }
+
   window.addEventListener("pagehide", () => {
+    leaveSeat();
     destroyed = true;
     clearInterval(heartbeat);
     clearTimeout(electTimer);
-    relay?.stop();
+    setTimeout(() => relay?.stop(), 150);
   }, { once: true });
 
   (async () => {
@@ -487,6 +567,7 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   return {
     send(action) {
       const full = { ...action, actionId: action.actionId || newId() };
+      const guarded = full.type === "start" || full.type === "pause" || full.type === "resume" || full.type === "fresh";
       const attemptSend = () => {
         if (isHost) {
           apply(playerId, full);
@@ -503,11 +584,32 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
         }, info.pub, info.slug);
         return true;
       };
-      if (attemptSend()) return;
-      const timer = setInterval(() => {
-        if (destroyed || steppedAside || attemptSend()) clearInterval(timer);
-      }, 400);
-      setTimeout(() => clearInterval(timer), 8000);
+      const go = async () => {
+        if (guarded) {
+          if (!isHost) {
+            toast("방장만 할 수 있습니다.");
+            return;
+          }
+          if (full.type === "start") {
+            if (!full.pass) {
+              toast("방장 암호를 정하세요.");
+              return;
+            }
+            full.passHash = await passRecord(full.pass);
+            delete full.pass;
+          } else if (!(await passOk(state?.hostPass, full.pass || ""))) {
+            delete full.pass;
+            toast("암호가 올바르지 않습니다.");
+            return;
+          } else delete full.pass;
+        }
+        if (attemptSend()) return;
+        const timer = setInterval(() => {
+          if (destroyed || steppedAside || attemptSend()) clearInterval(timer);
+        }, 400);
+        setTimeout(() => clearInterval(timer), 8000);
+      };
+      go();
     },
     takeOver() {
       if (destroyed || isHost || steppedAside) return;

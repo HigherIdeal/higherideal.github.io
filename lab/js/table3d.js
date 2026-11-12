@@ -1,6 +1,6 @@
-import * as THREE from "../vendor/three.module.js?v=20";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=20";
-import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=20";
+import * as THREE from "../vendor/three.module.js?v=21";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=21";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=21";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -178,9 +178,22 @@ export function mountTable(canvas) {
     camera.updateProjectionMatrix();
   }
 
+  function viewPixels() {
+    const visual = window.visualViewport;
+    const cssW = document.documentElement?.clientWidth || window.innerWidth;
+    const cssH = document.documentElement?.clientHeight || window.innerHeight;
+    return {
+      width: Math.max(1, Math.round(Math.min(window.innerWidth || cssW, cssW, visual?.width || cssW))),
+      height: Math.max(1, Math.round(Math.min(window.innerHeight || cssH, cssH, visual?.height || cssH))),
+    };
+  }
+
   function resize() {
-    width = Math.max(1, window.innerWidth);
-    height = Math.max(1, window.innerHeight);
+    const next = viewPixels();
+    width = next.width;
+    height = next.height;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     renderer.setPixelRatio(ratio);
     renderer.setSize(width, height, false);
@@ -248,7 +261,8 @@ export function mountTable(canvas) {
     const living = next.players.filter((p) => p.alive !== false);
     const start = Math.max(0, living.findIndex((p) => p.id === next.yourId));
     const ordered = living.map((_, index) => living[(start + index) % living.length]);
-    const layout = solveProjectedLayout(width, height, ordered.length);
+    const stacks = ordered.map((player) => [player.equipment?.weapon, player.equipment?.barrel, player.equipment?.mustang, player.equipment?.scope, player.equipment?.jail, player.equipment?.dynamite].filter(Boolean).length);
+    const layout = solveProjectedLayout(width, height, ordered.length, stacks);
     const mine = next.yourId;
     const onTurn = next.currentId === mine && next.turnPhase === "play" && !next.prompt;
     const put = (zone, texture, playerId, mode) => {
@@ -278,7 +292,7 @@ export function mountTable(canvas) {
       put(zone("role"), role ? loadTexture(role.image, textures) : back, player.id, mode);
       if (player.id !== mine) put(zone("hand"), back, player.id, mode);
       const eq = player.equipment || {};
-      placeGear(player, zone("character"), mode);
+      placeGear(player, zone("gear"), mode);
       const anchor = zone("character");
       if (anchor?.world && reach) {
         const pool = new THREE.PointLight(0xffc48a, 0.28, 1.25, 2);
@@ -317,28 +331,26 @@ export function mountTable(canvas) {
     groups.__order = ordered.map((player) => player.id);
   }
 
-  function placeGear(player, anchor, mode) {
+  function placeGear(player, zone, mode) {
     const cards = [player.equipment?.weapon, player.equipment?.barrel, player.equipment?.mustang, player.equipment?.scope, player.equipment?.jail, player.equipment?.dynamite].filter(Boolean);
-    if (!cards.length || !anchor?.world) return;
-    const w = anchor.world.w;
-    const span = Math.hypot(anchor.world.x, anchor.world.z) || 1;
-    const outX = anchor.world.x / span;
-    const outZ = anchor.world.z / span;
-    const rightX = -outZ;
-    const rightZ = outX;
-    const step = w * 0.3;
+    if (!cards.length || !zone?.world) return;
+    const n = cards.length;
+    const cardW = zone.world.w / (1 + 0.3 * (n - 1));
+    const span = Math.hypot(zone.world.x, zone.world.z) || 1;
+    const rightX = -zone.world.z / span;
+    const rightZ = zone.world.x / span;
     cards.forEach((card, index) => {
       const texture = loadTexture(CARD_INFO[card.type]?.image, textures);
       if (!texture) return;
-      const mesh = cardMesh(texture, w * 0.92, w * 0.92 * 1.45, mode);
-      const along = (index - (cards.length - 1) / 2) * step;
+      const mesh = cardMesh(texture, cardW, zone.world.d, mode);
+      const along = (index - (n - 1) / 2) * cardW * 0.3;
       mesh.position.set(
-        anchor.world.x + outX * w * 0.58 + rightX * along,
-        0.05 + (cards.length - index) * 0.016,
-        anchor.world.z + outZ * w * 0.58 + rightZ * along,
+        zone.world.x + rightX * along,
+        0.05 + (n - index) * 0.016,
+        zone.world.z + rightZ * along,
       );
       mesh.rotation.order = "YXZ";
-      mesh.rotation.y = cardYaw(anchor.world.x, anchor.world.z);
+      mesh.rotation.y = cardYaw(zone.world.x, zone.world.z);
       mesh.rotation.x = -Math.PI / 2;
       mesh.userData.kind = "gear";
       mesh.userData.gear = true;
@@ -562,10 +574,12 @@ export function mountTable(canvas) {
   let onSpots = null;
 
   resize();
-  window.addEventListener("resize", () => {
+  const onResize = () => {
     resize();
     if (view) rebuild(view);
-  });
+  };
+  window.addEventListener("resize", onResize);
+  window.visualViewport?.addEventListener("resize", onResize);
   tick();
   return {
     update,

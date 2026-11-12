@@ -293,6 +293,8 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   --step: 18px;
   max-width: 100%;
 }
+.stack.hand .stack-item { pointer-events: none; }
+.stack.hand .card { pointer-events: auto; }
 .stack-item {
   position: absolute;
   top: 0;
@@ -533,12 +535,14 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   transform-origin: 50% 100%;
 }
 .table-screen .hand .stack-item {
+  pointer-events: none;
   transform: translateX(calc(var(--i) * var(--step))) translateY(var(--lift, 0px))
     perspective(570px) rotateX(-11deg)
     rotate(calc((var(--i) - (var(--n) - 1) / 2) * 3.2deg)) scale(1);
   transition: transform .34s cubic-bezier(.18,.85,.26,1), filter .2s ease;
   filter: drop-shadow(0 6px 5px rgba(0,0,0,.55));
 }
+.table-screen .hand .stack-item .card { pointer-events: auto; }
 .table-screen .hand .stack-item:hover { --lift: -15px; z-index: 60; }
 .table-screen .hand .stack-item.is-up { --lift: -22px; }
 .table-screen .hand .stack-item.is-dealt { animation: card-landing .55s cubic-bezier(.2,.9,.3,1) both; }
@@ -738,6 +742,30 @@ body:has(.table-screen) { background: #000; }
   cursor: pointer;
 }
 .board.is-webgl .seat-btn { position: static; pointer-events: auto; background: none; }
+.pause-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #f6e6c6;
+  font-size: 42px;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+.host-pass {
+  position: fixed;
+  left: 50%;
+  top: 18%;
+  transform: translateX(-50%);
+  z-index: 80;
+  width: min(360px, calc(100% - 24px));
+  padding: 14px;
+  background: #efe6d4;
+  color: #2a2118;
+  border: 1px solid #5c4030;
+}
 #card-peek {
   position: fixed;
   inset: 0;

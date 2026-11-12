@@ -1,6 +1,6 @@
-import { ENTRY_CODE } from "./config.js?v=20";
-import { connect } from "./net.js?v=20";
-import { mount } from "./ui.js?v=20";
+import { ENTRY_CODE } from "./config.js?v=21";
+import { connect } from "./net.js?v=21";
+import { mount } from "./ui.js?v=21";
 
 const app = document.querySelector("#app");
 let link = null;
@@ -52,12 +52,7 @@ function enter(nickname, code) {
   savedName = nickname;
   entryError = "";
   localStorage.setItem("bang-nickname", nickname);
-  // This tab's id. sessionStorage survives a refresh of this tab and is not shared with other tabs.
-  let playerId = sessionStorage.getItem("bang-player-id");
-  if (!playerId) {
-    playerId = crypto.randomUUID();
-    sessionStorage.setItem("bang-player-id", playerId);
-  }
+  const playerId = crypto.randomUUID();
   status = { mode: "search", text: "중계에 연결하는 중…" };
   link = connect({
     playerId,
