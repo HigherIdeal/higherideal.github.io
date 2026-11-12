@@ -153,13 +153,14 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .roster { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
 .roster li, .victory li {
   display: flex; gap: 8px; align-items: center; justify-content: space-between;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  padding: 10px 12px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(92, 64, 48, 0.28);
+  border-radius: 0;
+  padding: 8px 2px;
 }
-.roster em, .plate em { font-style: normal; color: var(--muted); font-size: 12px; }
-.roster .off, .plate .off { color: var(--stamp); }
+.roster em, .who span { font-style: normal; color: var(--muted); font-size: 12px; }
+.roster .off, .who .off { color: var(--stamp); }
 .choice-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .choice {
   text-align: left; color: var(--ink); background: var(--panel); border-radius: 2px; padding: 10px;
@@ -178,65 +179,102 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .my-role img { width: 74px; border-radius: 4px; }
 .chosen-note { font-family: var(--display); font-size: 22px; }
 
-.table-screen { display: grid; grid-template-columns: minmax(0, 1fr) 300px; height: 100dvh; }
-.table-wrap { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.board { position: relative; flex: 1; min-height: 0; }
-.felt {
-  position: absolute; left: 7%; right: 7%; top: 12%; bottom: 24%;
-  border-radius: 50%;
-  background: rgba(255, 250, 242, 0.28);
-  border: 1px solid rgba(92, 64, 48, 0.55);
-  box-shadow: none;
+.table-screen {
+  display: grid; grid-template-columns: minmax(0, 1fr) 300px;
+  height: 100dvh; max-height: 100dvh; overflow: hidden;
 }
-.seat { position: absolute; transform: translate(-50%, -50%); width: 132px; z-index: 2; }
-.seat-cards, .equips, .plate { display: flex; justify-content: center; align-items: flex-end; gap: 4px; }
-.plate {
-  flex-wrap: wrap; gap: 3px 6px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  padding: 3px 6px;
-  margin-top: 3px;
+.table-screen > * { min-height: 0; min-width: 0; }
+.table-wrap { display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; }
+.board {
+  position: relative; flex: 1; min-height: 0; overflow: auto;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 12px 16px 10px;
 }
-.plate strong { font-size: 12px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plate .card { width: 28px; }
-.seat.is-target, .self-tray.is-target { outline: 1px solid var(--line); outline-offset: 3px; border-radius: 2px; cursor: pointer; }
-.char-card, .role-card { width: 62px; }
-.equips .card { width: 36px; }
+.opponents {
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start;
+  gap: 22px 32px;
+}
+.seat {
+  flex: 0 1 156px; width: 156px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+.seat-cards, .equips, .who { display: flex; justify-content: center; align-items: center; gap: 4px; }
+.who { flex-wrap: wrap; margin: 0; max-width: 156px; line-height: 1.2; }
+.who strong { font-size: 12px; font-weight: 700; }
+.seat.is-target, .self-tray.is-target { outline: 1px solid var(--line); outline-offset: 4px; cursor: pointer; }
+.char-card, .role-card { width: 58px; }
+.equips { flex-wrap: wrap; max-width: 156px; }
+.equips .card { width: 34px; }
 .center-piles {
-  position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%);
-  display: grid; justify-items: center; gap: 6px; z-index: 3; width: min(420px, 70%);
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end;
+  gap: 10px 14px; margin: 0 auto;
 }
-.center-piles .card { width: 72px; }
+.center-piles .card { width: 64px; }
+.store { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .store-row, .take-row { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
-.store-row .card, .take-row .card { width: 68px; }
+.store-row .card, .take-row .card { width: 64px; }
 .turn-flag, .store p, .prompt-note { margin: 0; text-align: center; font-size: 13px; color: var(--ink); }
-.graveyard { position: absolute; left: 12px; bottom: 132px; margin: 0; font-size: 12px; color: var(--muted); z-index: 3; }
+.graveyard { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
+.mine { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .self-tray {
-  position: absolute; left: 50%; bottom: 196px; transform: translateX(-50%);
-  z-index: 4; display: flex; align-items: flex-end; gap: 6px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  padding: 6px 8px;
+  display: flex; align-items: flex-end; justify-content: center; gap: 8px;
+  background: none; border: 0; padding: 0;
 }
-.self-tray .char-card, .self-tray .role-card { width: 72px; }
+.self-tray .char-card, .self-tray .role-card { width: 78px; }
 .hand-row {
-  position: absolute; left: 0; right: 0; bottom: 46px; z-index: 5;
   display: flex; justify-content: center; align-items: flex-end;
-  pointer-events: none; padding: 0 8px;
+  pointer-events: none; padding: 0 8px; width: 100%;
 }
 .hand-count {
-  width: 22px; height: 30px; border-radius: 2px; display: grid; place-items: center;
-  background: var(--panel);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  font-size: 12px; font-weight: 700;
+  background: none; border: 0; color: var(--muted);
+  font-size: 12px; font-weight: 700; width: auto; height: auto;
 }
 .fan-card { width: 96px; margin-left: calc(var(--pull, 0px) * -1); pointer-events: auto; transform: rotate(var(--rot)) translateY(0); transform-origin: 50% 130%; transition: transform .16s ease; }
 .fan-card.is-up { transform: rotate(var(--rot)) translateY(-30px); }
+.stack {
+  --card-w: 62px;
+  --step: 14px;
+  --open-scale: 1.72;
+  --open-step: min(108px, calc(90vw / var(--n)));
+  position: relative;
+  width: calc(var(--card-w) + (var(--n) - 1) * var(--step));
+  height: calc(var(--card-w) * 1.56);
+  flex: none;
+  overflow: visible;
+}
+.stack.hand {
+  --card-w: 88px;
+  --step: min(34px, calc(72vw / max(var(--n), 1)));
+  --open-scale: 1.28;
+  --open-step: min(118px, calc(94vw / var(--n)));
+  max-width: 100%;
+}
+.stack-item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--card-w);
+  z-index: var(--i);
+  transform-origin: 50% 100%;
+  transform: translateX(calc(var(--i) * var(--step))) translateY(var(--lift, 0px)) rotate(calc((var(--i) - (var(--n) - 1) / 2) * 3.2deg)) scale(1);
+  transition: transform 0.42s cubic-bezier(0.22, 0.7, 0.25, 1);
+}
+.stack-item.is-up { --lift: -16px; }
+.stack-item .card { width: 100%; }
+.stack.is-open { z-index: 40; }
+.stack.is-open .stack-item {
+  z-index: calc(var(--i) + 1);
+  transform: translateX(calc(
+    (var(--n) - 1) * var(--step) / 2
+    + (var(--i) - (var(--n) - 1) / 2) * var(--open-step)
+  )) translateY(-22px) rotate(0deg) scale(var(--open-scale));
+}
+.board:has(.stack.is-open),
+.table-wrap:has(.stack.is-open),
+.opponents:has(.stack.is-open),
+.mine:has(.stack.is-open) { overflow: visible; }
 .action-bar {
-  position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 6;
+  position: static;
   display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
 }
 .bar-btn.danger { color: var(--stamp); border-color: var(--stamp); }
@@ -315,16 +353,14 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 #zoom-layer .card { position: fixed; margin: 0; z-index: 81; transition: left .25s ease, top .25s ease, width .25s ease, height .25s ease; }
 
 @media (max-width: 800px) {
-  .table-screen { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 30dvh; height: 100dvh; }
+  .table-screen { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(140px, 28dvh); height: 100dvh; max-height: 100dvh; }
   .dock { border-left: 0; border-top: 1px solid var(--line); }
-  .seat { width: 92px; }
-  .char-card, .role-card { width: 46px; }
-  .equips .card { width: 26px; }
-  .fan-card { width: 74px; }
-  .hand-row { bottom: 44px; }
-  .self-tray { bottom: 188px; }
-  .self-tray .char-card, .self-tray .role-card { width: 54px; }
-  .graveyard { bottom: 8px; left: 8px; }
+  .board { gap: 8px; padding: 8px 8px 6px; }
+  .opponents { gap: 12px 10px; }
+  .seat { flex-basis: 46%; width: 46%; max-width: 168px; }
+  .char-card, .role-card { width: 48px; }
+  .equips .card { width: 28px; }
+  .fan-card { width: 72px; }
+  .self-tray .char-card, .self-tray .role-card { width: 60px; }
   .choice-row { grid-template-columns: 1fr; }
-  .felt { bottom: 28%; }
 }

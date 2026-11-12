@@ -10,6 +10,7 @@ const ui = {
   chat: "",
   picker: null,
   wired: false,
+  heldStack: null,
 };
 
 function esc(value) {
@@ -57,6 +58,7 @@ export function mount(app, ctx) {
     app.addEventListener("submit", (event) => onSubmit(event, app));
     wireZoom();
   }
+  if (ui.heldStack) app.querySelector(`[data-stack-id="${ui.heldStack}"]`)?.classList.add("is-open");
   app.__ctx = ctx;
 }
 
@@ -185,18 +187,21 @@ function tableHtml(ctx) {
         <button type="button" data-action="help">도움말</button>
       </header>
       <div class="board">
-      <div class="felt"></div>
-      ${ring.map((p, i) => (p.id === view.yourId ? "" : seatHtml(p, i, ring.length, view))).join("")}
-      ${me?.alive ? selfTray(me, view) : ""}
+      <div class="opponents">
+        ${ring.filter((p) => p.id !== view.yourId).map((p) => seatHtml(p, view)).join("")}
+      </div>
       <div class="center-piles">
-        ${backCard(String(view.deckCount), `data-card-id="deck" aria-label="덱 ${view.deckCount}장"`)}
-        ${view.discardTop ? cardArt(view.discardTop, `data-discard-top="1"`) : `<div class="card empty-pile">비어 있음</div>`}
+        ${view.deckCount ? backCard(String(view.deckCount), `data-card-id="deck" aria-label="덱 ${view.deckCount}장"`) : ""}
+        ${view.discardTop ? cardArt(view.discardTop, `data-discard-top="1"`) : ""}
         ${storeHtml(view)}
         ${promptCardsHtml(view)}
       </div>
       ${deadHtml(view)}
-      ${me?.alive && view.phase === "play" ? handHtml(view, me) : ""}
-      ${actionBar(view, me)}
+      <div class="mine">
+        ${me?.alive ? selfTray(me, view) : ""}
+        ${me?.alive && view.phase === "play" ? handHtml(view, me) : ""}
+        ${actionBar(view, me)}
+      </div>
       ${ended ? endHtml(view) : ""}
       </div>
     </section>
@@ -207,28 +212,34 @@ function tableHtml(ctx) {
   </main>`;
 }
 
-function seatHtml(p, index, total, view) {
-  const theta = Math.PI / 2 + (index / total) * Math.PI * 2;
-  const x = 50 + Math.cos(theta) * 37;
-  const y = 47 + Math.sin(theta) * 28;
+function stackHtml(id, pieces, extra = "") {
+  const cards = pieces.filter(Boolean);
+  if (!cards.length) return "";
+  return `<div class="stack ${extra}" data-stack-id="${esc(id)}" style="--n:${cards.length}">
+    ${cards.map((html, i) => `<div class="stack-item" style="--i:${i}">${html}</div>`).join("")}
+  </div>`;
+}
+
+function seatCards(p, view) {
   const ch = characterById(p.character);
+  return [
+    roleFace(p, view),
+    ch ? `<button type="button" class="card char-card" data-card-id="${esc(p.character)}"><img src="${ch.image}" alt="${esc(ch.name)}" draggable="false" /></button>` : "",
+    ...equipPieces(p),
+  ];
+}
+
+function seatHtml(p, view) {
   const selected = ui.picker?.targetId === p.id || isTarget(view, p.id);
-  const me = p.id === view.yourId;
-  return `<article class="seat ${selected ? "is-target" : ""} ${me ? "is-me" : ""}" style="left:${x}%;top:${y}%" data-player="${esc(p.id)}" ${selected ? `data-legal-target="1"` : ""}>
-    <div class="seat-cards">
-      ${roleFace(p, view)}
-      ${ch ? `<button type="button" class="card char-card" data-card-id="${esc(p.character)}"><img src="${ch.image}" alt="${esc(ch.name)}" draggable="false" /></button>` : ""}
-    </div>
-    <div class="equips">
-      ${equipCards(p)}
-    </div>
-      <div class="plate">
+  return `<article class="seat ${selected ? "is-target" : ""}" data-player="${esc(p.id)}" ${selected ? `data-legal-target="1"` : ""}>
+    ${stackHtml(`seat-${p.id}`, seatCards(p, view))}
+    <p class="who">
       <strong>${esc(p.nickname)}</strong>
-      ${p.distance ? `<em>거리 ${p.distance}</em>` : ""}
-      ${!p.connected ? `<em class="off">끊김</em>` : ""}
+      ${p.distance ? `<span>거리 ${p.distance}</span>` : ""}
+      ${p.connected ? "" : `<span class="off">끊김</span>`}
       <span class="bullets" aria-label="생명 ${p.hp}">${bullets(p.hp, p.maxHp)}</span>
-      ${me ? "" : `<span class="hand-count" title="손패">${p.handCount}</span>`}
-    </div>
+      <span class="hand-count" title="손패" aria-label="손패 ${p.handCount}장">${p.handCount}</span>
+    </p>
   </article>`;
 }
 
@@ -252,11 +263,11 @@ function roleFace(p, view) {
   return backCard("역할", `data-card-id="role-${esc(p.id)}"`);
 }
 
-function equipCards(p) {
+function equipPieces(p) {
   const eq = p.equipment || {};
-  const cards = [eq.weapon, eq.barrel, eq.mustang, eq.scope, eq.jail, eq.dynamite].filter(Boolean);
-  if (!cards.length) return "";
-  return cards.map((card) => cardArt(card, `data-equip="${esc(card.id)}"`)).join("");
+  return [eq.weapon, eq.barrel, eq.mustang, eq.scope, eq.jail, eq.dynamite]
+    .filter(Boolean)
+    .map((card) => cardArt(card, `data-equip="${esc(card.id)}"`));
 }
 
 function bullets(hp, max) {
@@ -267,16 +278,13 @@ function bullets(hp, max) {
 }
 
 function selfTray(p, view) {
-  const ch = characterById(p.character);
   const selected = isTarget(view, p.id);
   return `<div class="self-tray ${selected ? "is-target" : ""}" ${selected ? `data-legal-target="1" data-player="${esc(p.id)}"` : ""}>
-    ${roleFace(p, view)}
-    ${ch ? `<button type="button" class="card char-card" data-card-id="${esc(p.character)}"><img src="${ch.image}" alt="${esc(ch.name)}" draggable="false" /></button>` : ""}
-    <div class="equips">${equipCards(p)}</div>
-    <div class="plate">
+    ${stackHtml("self", seatCards(p, view))}
+    <p class="who">
       <strong>${esc(p.nickname)}</strong>
       <span class="bullets" aria-label="생명 ${p.hp}">${bullets(p.hp, p.maxHp)}</span>
-    </div>
+    </p>
   </div>`;
 }
 
@@ -288,20 +296,19 @@ function deadHtml(view) {
 
 function handHtml(view, me) {
   const hand = me.hand || [];
-  const n = hand.length;
-  const width = 96;
-  const max = Math.min(window.innerWidth * 0.94, view ? 820 : 820);
-  const step = n <= 1 ? width : Math.min(width * 0.58, (max - width) / (n - 1));
-  const pull = Math.max(0, width - step);
-  return `<div class="hand-row" data-hand="1">${hand.map((card, i) => {
-    const rot = (i - (n - 1) / 2) * Math.min(7, 64 / Math.max(1, n));
+  const pieces = hand.map((card) => {
     const info = (view.handInfo || []).find((h) => h.cardId === card.id);
-    const selected = ui.selected === card.id || ui.discard.has(card.id) || ui.sid.has(card.id);
     const response = responseKind(view, me, card);
-    return `<div class="fan-card ${selected ? "is-up" : ""}" style="--rot:${rot}deg;--pull:${i === 0 ? 0 : pull}px;z-index:${selected ? 40 : i}">
-      ${cardArt(card, `data-hand-card="1" ${response ? `data-response-card="1"` : ""} ${info && !info.ok ? `data-illegal="1"` : ""}`)}
-    </div>`;
-  }).join("")}</div>`;
+    const selected = ui.selected === card.id || ui.discard.has(card.id) || ui.sid.has(card.id);
+    return {
+      selected,
+      html: cardArt(card, `data-hand-card="1" ${response ? `data-response-card="1"` : ""} ${info && !info.ok ? `data-illegal="1"` : ""}`),
+    };
+  });
+  if (!pieces.length) return "";
+  return `<div class="stack hand" data-hand="1" data-stack-id="hand" style="--n:${pieces.length}">
+    ${pieces.map((piece, i) => `<div class="stack-item ${piece.selected ? "is-up" : ""}" style="--i:${i}">${piece.html}</div>`).join("")}
+  </div>`;
 }
 
 function responseKind(view, me, card) {
@@ -643,14 +650,22 @@ let eatingClick = false;
 function wireZoom() {
   const layer = document.querySelector("#zoom-layer");
   window.addEventListener("pointerdown", (event) => {
+    if (event.button > 0) return;
+    const stack = event.target.closest?.(".stack");
+    if (stack) {
+      const point = { x: event.clientX, y: event.clientY, stack, kind: "stack", moved: false };
+      point.timer = setTimeout(() => openStack(stack, point), 240);
+      zoom = point;
+      return;
+    }
     const card = event.target.closest?.(".card");
-    if (!card || event.button > 0) return;
-    const point = { x: event.clientX, y: event.clientY, card, moved: false };
+    if (!card) return;
+    const point = { x: event.clientX, y: event.clientY, card, kind: "card", moved: false };
     point.timer = setTimeout(() => startZoom(card, layer, point), 260);
     zoom = point;
   });
   window.addEventListener("pointermove", (event) => {
-    if (!zoom || zoom.zoomed) return;
+    if (!zoom || zoom.zoomed || zoom.opened) return;
     if (Math.hypot(event.clientX - zoom.x, event.clientY - zoom.y) > 12) {
       clearTimeout(zoom.timer);
       zoom.moved = true;
@@ -658,6 +673,14 @@ function wireZoom() {
   });
   window.addEventListener("pointerup", () => finishZoom(layer));
   window.addEventListener("pointercancel", () => finishZoom(layer));
+}
+
+function openStack(stack, point) {
+  if (!stack.isConnected) return;
+  stack.classList.add("is-open");
+  ui.heldStack = stack.dataset.stackId || null;
+  point.opened = true;
+  eatingClick = true;
 }
 
 function startZoom(card, layer, point) {
@@ -691,6 +714,16 @@ function finishZoom(layer) {
   clearTimeout(zoom.timer);
   const point = zoom;
   zoom = null;
+  if (point.kind === "stack") {
+    ui.heldStack = null;
+    document.querySelectorAll(".stack.is-open").forEach((el) => el.classList.remove("is-open"));
+    if (!point.opened) {
+      eatingClick = false;
+      return;
+    }
+    setTimeout(() => { eatingClick = false; }, 280);
+    return;
+  }
   if (!point.zoomed) {
     eatingClick = false;
     return;

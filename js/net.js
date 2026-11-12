@@ -175,7 +175,7 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     });
     peer.on("error", (err) => {
       if (err?.type === "unavailable-id") {
-        if (sessionStorage.getItem("bang-restoring") === "1") {
+        if (sessionStorage.getItem("bang-restoring") === "1" || (isHost && state)) {
           report("host", "방장 자리를 되찾는 중…");
           setTimeout(() => { if (!destroyed && isHost) openHostPeer(); }, 1500);
           return;
