@@ -58,7 +58,6 @@ export function mount(app, ctx) {
     app.addEventListener("submit", (event) => onSubmit(event, app));
     wireZoom();
   }
-  if (ui.heldStack) app.querySelector(`[data-stack-id="${ui.heldStack}"]`)?.classList.add("is-open");
   app.__ctx = ctx;
 }
 
@@ -187,17 +186,15 @@ function tableHtml(ctx) {
         <button type="button" data-action="help">도움말</button>
       </header>
       <div class="board">
-      <div class="opponents">
-        ${ring.filter((p) => p.id !== view.yourId).map((p) => seatHtml(p, view)).join("")}
-      </div>
+      ${aroundHtml(ring.filter((p) => p.id !== view.yourId), view)}
       <div class="center-piles">
         ${view.deckCount ? backCard(String(view.deckCount), `data-card-id="deck" aria-label="덱 ${view.deckCount}장"`) : ""}
         ${view.discardTop ? cardArt(view.discardTop, `data-discard-top="1"`) : ""}
         ${storeHtml(view)}
         ${promptCardsHtml(view)}
       </div>
-      ${deadHtml(view)}
       <div class="mine">
+        ${deadHtml(view)}
         ${me?.alive ? selfTray(me, view) : ""}
         ${me?.alive && view.phase === "play" ? handHtml(view, me) : ""}
         ${actionBar(view, me)}
@@ -210,6 +207,29 @@ function tableHtml(ctx) {
     ${toastHtml(ctx)}
     ${helpHtml()}
   </main>`;
+}
+
+function aroundHtml(others, view) {
+  const n = others.length;
+  const base = Math.floor(n / 3);
+  const extra = n % 3;
+  let leftN = base;
+  let topN = base;
+  let rightN = base;
+  if (extra === 1) topN += 1;
+  else if (extra === 2) {
+    leftN += 1;
+    rightN += 1;
+  }
+  const left = others.slice(0, leftN);
+  const top = others.slice(leftN, leftN + topN);
+  const right = others.slice(leftN + topN);
+  const seats = (list) => list.map((p) => seatHtml(p, view)).join("");
+  return `<div class="around">
+    <div class="side side-left">${seats(left)}</div>
+    <div class="side side-top">${seats(top)}</div>
+    <div class="side side-right">${seats(right)}</div>
+  </div>`;
 }
 
 function stackHtml(id, pieces, extra = "") {
@@ -652,20 +672,16 @@ function wireZoom() {
   window.addEventListener("pointerdown", (event) => {
     if (event.button > 0) return;
     const stack = event.target.closest?.(".stack");
-    if (stack) {
-      const point = { x: event.clientX, y: event.clientY, stack, kind: "stack", moved: false };
-      point.timer = setTimeout(() => openStack(stack, point), 240);
-      zoom = point;
-      return;
-    }
-    const card = event.target.closest?.(".card");
-    if (!card) return;
-    const point = { x: event.clientX, y: event.clientY, card, kind: "card", moved: false };
-    point.timer = setTimeout(() => startZoom(card, layer, point), 260);
+    const cards = stack
+      ? [...stack.querySelectorAll(".card")]
+      : (event.target.closest?.(".card") ? [event.target.closest(".card")] : []);
+    if (!cards.length) return;
+    const point = { x: event.clientX, y: event.clientY, cards, moved: false, opened: false };
+    point.timer = setTimeout(() => openZoom(cards, layer, point), 240);
     zoom = point;
   });
   window.addEventListener("pointermove", (event) => {
-    if (!zoom || zoom.zoomed || zoom.opened) return;
+    if (!zoom || zoom.opened) return;
     if (Math.hypot(event.clientX - zoom.x, event.clientY - zoom.y) > 12) {
       clearTimeout(zoom.timer);
       zoom.moved = true;
@@ -675,37 +691,58 @@ function wireZoom() {
   window.addEventListener("pointercancel", () => finishZoom(layer));
 }
 
-function openStack(stack, point) {
-  if (!stack.isConnected) return;
-  stack.classList.add("is-open");
-  ui.heldStack = stack.dataset.stackId || null;
-  point.opened = true;
-  eatingClick = true;
-}
-
-function startZoom(card, layer, point) {
-  if (!card.isConnected) return;
-  const rect = card.getBoundingClientRect();
-  const clone = card.cloneNode(true);
-  clone.querySelectorAll("[data-hand-card],[data-self-role],[data-store-card],[data-pick-card]").forEach((node) => {
-    node.removeAttribute("data-hand-card");
-  });
-  layer.hidden = false;
-  layer.replaceChildren(clone);
+function placeClone(clone, rect) {
   clone.style.left = `${rect.left}px`;
   clone.style.top = `${rect.top}px`;
   clone.style.width = `${rect.width}px`;
   clone.style.height = `${rect.height}px`;
-  point.zoomed = true;
-  point.clone = clone;
+}
+
+function openZoom(cards, layer, point) {
+  const live = cards.filter((card) => card.isConnected);
+  if (!live.length) return;
+  const clones = live.map((card) => {
+    const rect = card.getBoundingClientRect();
+    const clone = card.cloneNode(true);
+    clone.querySelectorAll("[data-hand-card],[data-self-role],[data-store-card],[data-pick-card],[data-response-card]").forEach((node) => {
+      node.removeAttribute("data-hand-card");
+      node.removeAttribute("data-self-role");
+      node.removeAttribute("data-store-card");
+      node.removeAttribute("data-pick-card");
+      node.removeAttribute("data-response-card");
+    });
+    clone.style.transition = "none";
+    clone.style.margin = "0";
+    clone.style.transform = "none";
+    placeClone(clone, rect);
+    return { clone, rect };
+  });
+  layer.replaceChildren(...clones.map((item) => item.clone));
+  layer.hidden = false;
+  point.opened = true;
+  point.clones = clones;
   eatingClick = true;
   requestAnimationFrame(() => {
-    const width = Math.min(320, window.innerWidth * 0.78);
-    const height = width * (rect.height / Math.max(1, rect.width));
-    clone.style.left = `${(window.innerWidth - width) / 2}px`;
-    clone.style.top = `${Math.max(12, (window.innerHeight - height) / 2)}px`;
-    clone.style.width = `${width}px`;
-    clone.style.height = `${height}px`;
+    const n = clones.length;
+    const pad = 18;
+    const gap = n > 1 ? 12 : 0;
+    let cardW = Math.min(176, (window.innerWidth - pad * 2 - gap * (n - 1)) / n);
+    let cardH = cardW * 1.555;
+    const maxH = window.innerHeight - pad * 2;
+    if (cardH > maxH) {
+      cardH = maxH;
+      cardW = cardH / 1.555;
+    }
+    const total = n * cardW + (n - 1) * gap;
+    const startX = (window.innerWidth - total) / 2;
+    const top = (window.innerHeight - cardH) / 2;
+    clones.forEach(({ clone }, i) => {
+      clone.style.transition = "left .42s cubic-bezier(.22,.7,.25,1), top .42s cubic-bezier(.22,.7,.25,1), width .42s cubic-bezier(.22,.7,.25,1), height .42s cubic-bezier(.22,.7,.25,1)";
+      clone.style.left = `${startX + i * (cardW + gap)}px`;
+      clone.style.top = `${top}px`;
+      clone.style.width = `${cardW}px`;
+      clone.style.height = `${cardH}px`;
+    });
   });
 }
 
@@ -714,31 +751,14 @@ function finishZoom(layer) {
   clearTimeout(zoom.timer);
   const point = zoom;
   zoom = null;
-  if (point.kind === "stack") {
-    ui.heldStack = null;
-    document.querySelectorAll(".stack.is-open").forEach((el) => el.classList.remove("is-open"));
-    if (!point.opened) {
-      eatingClick = false;
-      return;
-    }
-    setTimeout(() => { eatingClick = false; }, 280);
-    return;
-  }
-  if (!point.zoomed) {
+  if (!point.opened) {
     eatingClick = false;
     return;
   }
-  const clone = point.clone;
-  const rect = point.card.isConnected ? point.card.getBoundingClientRect() : null;
-  if (rect) {
-    clone.style.left = `${rect.left}px`;
-    clone.style.top = `${rect.top}px`;
-    clone.style.width = `${rect.width}px`;
-    clone.style.height = `${rect.height}px`;
-  }
+  for (const item of point.clones || []) placeClone(item.clone, item.rect);
   setTimeout(() => {
     layer.hidden = true;
     layer.replaceChildren();
-    setTimeout(() => { eatingClick = false; }, 30);
-  }, 240);
+    setTimeout(() => { eatingClick = false; }, 40);
+  }, 430);
 }

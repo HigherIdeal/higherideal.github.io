@@ -187,27 +187,41 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .table-wrap { display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; }
 .board {
   position: relative; flex: 1; min-height: 0; overflow: auto;
-  display: flex; flex-direction: column; gap: 12px;
-  padding: 12px 16px 10px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  grid-template-rows: auto minmax(72px, 1fr) auto;
+  gap: 8px 12px;
+  padding: 10px 12px 8px;
+  align-items: stretch;
 }
-.opponents {
-  display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start;
-  gap: 22px 32px;
+.around { display: contents; }
+.side-left, .side-right {
+  display: flex; align-items: center; justify-content: space-evenly; gap: 10px;
+  grid-row: 1 / -1;
+}
+.side-left { grid-column: 1; flex-direction: column-reverse; }
+.side-right { grid-column: 3; flex-direction: column; }
+.side-top {
+  grid-column: 2; grid-row: 1;
+  display: flex; justify-content: space-evenly; align-items: flex-start; gap: 16px;
 }
 .seat {
-  flex: 0 1 156px; width: 156px;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
+  width: max-content; max-width: 120px;
 }
 .seat-cards, .equips, .who { display: flex; justify-content: center; align-items: center; gap: 4px; }
-.who { flex-wrap: wrap; margin: 0; max-width: 156px; line-height: 1.2; }
-.who strong { font-size: 12px; font-weight: 700; }
+.who { flex-wrap: wrap; margin: 0; max-width: 108px; line-height: 1.2; }
+.who strong { font-size: 12px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .seat.is-target, .self-tray.is-target { outline: 1px solid var(--line); outline-offset: 4px; cursor: pointer; }
 .char-card, .role-card { width: 58px; }
 .equips { flex-wrap: wrap; max-width: 156px; }
 .equips .card { width: 34px; }
 .center-piles {
+  grid-column: 2; grid-row: 2;
   display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end;
-  gap: 10px 14px; margin: 0 auto;
+  align-self: center; justify-self: center;
+  gap: 10px 14px; margin: 0;
+  max-width: 100%;
 }
 .center-piles .card { width: 64px; }
 .store { display: flex; flex-direction: column; align-items: center; gap: 4px; }
@@ -215,9 +229,13 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .store-row .card, .take-row .card { width: 64px; }
 .turn-flag, .store p, .prompt-note { margin: 0; text-align: center; font-size: 13px; color: var(--ink); }
 .graveyard { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
-.mine { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.mine {
+  grid-column: 2; grid-row: 3;
+  min-width: 0; width: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
 .self-tray {
-  display: flex; align-items: flex-end; justify-content: center; gap: 8px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
   background: none; border: 0; padding: 0;
 }
 .self-tray .char-card, .self-tray .role-card { width: 78px; }
@@ -243,10 +261,8 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   overflow: visible;
 }
 .stack.hand {
-  --card-w: 88px;
-  --step: min(34px, calc(72vw / max(var(--n), 1)));
-  --open-scale: 1.28;
-  --open-step: min(118px, calc(94vw / var(--n)));
+  --card-w: 78px;
+  --step: 18px;
   max-width: 100%;
 }
 .stack-item {
@@ -261,18 +277,6 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 }
 .stack-item.is-up { --lift: -16px; }
 .stack-item .card { width: 100%; }
-.stack.is-open { z-index: 40; }
-.stack.is-open .stack-item {
-  z-index: calc(var(--i) + 1);
-  transform: translateX(calc(
-    (var(--n) - 1) * var(--step) / 2
-    + (var(--i) - (var(--n) - 1) / 2) * var(--open-step)
-  )) translateY(-22px) rotate(0deg) scale(var(--open-scale));
-}
-.board:has(.stack.is-open),
-.table-wrap:has(.stack.is-open),
-.opponents:has(.stack.is-open),
-.mine:has(.stack.is-open) { overflow: visible; }
 .action-bar {
   position: static;
   display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
@@ -349,18 +353,16 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .victory ul { list-style: none; padding: 0; margin: 0 0 10px; }
 .help { border: 1px solid var(--line); border-radius: 2px; padding: 16px; max-width: 460px; color: var(--ink); background: var(--panel); }
 .help::backdrop { background: rgba(90, 70, 40, 0.28); }
-#zoom-layer { position: fixed; inset: 0; z-index: 80; pointer-events: none; background: rgba(90, 70, 40, 0.16); }
-#zoom-layer .card { position: fixed; margin: 0; z-index: 81; transition: left .25s ease, top .25s ease, width .25s ease, height .25s ease; }
+#zoom-layer { position: fixed; inset: 0; z-index: 80; pointer-events: none; background: rgba(58, 42, 26, 0.28); }
+#zoom-layer .card { position: fixed; margin: 0; z-index: 81; transform: none; }
 
 @media (max-width: 800px) {
   .table-screen { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(140px, 28dvh); height: 100dvh; max-height: 100dvh; }
   .dock { border-left: 0; border-top: 1px solid var(--line); }
-  .board { gap: 8px; padding: 8px 8px 6px; }
-  .opponents { gap: 12px 10px; }
-  .seat { flex-basis: 46%; width: 46%; max-width: 168px; }
-  .char-card, .role-card { width: 48px; }
-  .equips .card { width: 28px; }
-  .fan-card { width: 72px; }
-  .self-tray .char-card, .self-tray .role-card { width: 60px; }
+  .board { gap: 4px 6px; padding: 6px; }
+  .seat { max-width: 86px; }
+  .stack { --card-w: 46px; --step: 8px; }
+  .stack.hand { --card-w: 58px; --step: 12px; }
+  .self-tray .char-card, .self-tray .role-card { width: 58px; }
   .choice-row { grid-template-columns: 1fr; }
 }

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { baseDeckTemplates } from "../js/cards.js";
+import { baseDeckTemplates } from "../lab/js/cards.js";
 import {
   addPlayer,
   autoChoice,
   createLobby,
   dispatch,
   projectView,
-} from "../js/engine.js";
+} from "../lab/js/engine.js";
 
 function card(id, type, suit, rank) {
   return { id, type, suit, rank };
