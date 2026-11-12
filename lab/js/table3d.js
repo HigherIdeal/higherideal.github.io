@@ -1,7 +1,7 @@
-import * as THREE from "../vendor/three.module.js?v=31";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=31";
-import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=31";
-import { stampCanvas } from "./stamp.js?v=31";
+import * as THREE from "../vendor/three.module.js?v=32";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=32";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=32";
+import { stampCanvas } from "./stamp.js?v=32";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -350,19 +350,19 @@ export function mountTable(canvas) {
       if (!spot?.world) return;
       const sheriff = player.role === "sheriff";
       const phone = width < 800;
-      const markerRadius = phone ? 0.105 : 0.07;
+      const markerRadius = phone ? 0.038 : 0.07;
       const marker = new THREE.Mesh(sheriff ? starGeo : new THREE.SphereGeometry(markerRadius, 32, 20), sheriff ? goldMat : blackMat);
       if (sheriff) {
         marker.rotation.x = -Math.PI / 2;
-        marker.scale.setScalar(phone ? 0.51 : 0.34);
+        marker.scale.setScalar(phone ? 0.2 : 0.34);
       } else {
         const rim = new THREE.Mesh(new THREE.SphereGeometry(markerRadius, 32, 20), rimMat);
         rim.scale.setScalar(1.16);
         marker.add(rim);
       }
-      marker.position.set(spot.world.x, 0.46, spot.world.z);
+      marker.position.set(spot.world.x, phone ? 0.16 : 0.46, spot.world.z);
       marker.userData.bob = index * 0.7;
-      marker.userData.baseY = 0.46;
+      marker.userData.baseY = phone ? 0.16 : 0.46;
       marker.userData.playerId = player.id;
       scene.add(marker);
       markers.set(player.id, marker);
@@ -438,8 +438,8 @@ export function mountTable(canvas) {
       const card = owned[i];
       const texture = card ? (loadPlayCard(card, textures) || back) : back;
       placePileCard(anchor, texture, i, shown, {
-        scale: 0.78,
-        inward: anchor.world.d * 0.28,
+        scale: 0.72,
+        inward: -anchor.world.d * 0.5,
         y: 0.16,
         id: `hand-${player.id}-${i}`,
         data: {
@@ -634,6 +634,21 @@ export function mountTable(canvas) {
         cy: (box.top + box.bottom) / 2,
       });
     }
+    const seatBounds = new Map();
+    for (const mesh of groups.values()) {
+      const kind = mesh.userData.kind;
+      const id = mesh.userData.playerId;
+      if (!id || !["character", "gear", "role", "hand"].includes(kind)) continue;
+      const box = cardScreenBox(mesh);
+      if (!box) continue;
+      const cur = seatBounds.get(id) || { id, left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
+      cur.left = Math.min(cur.left, box.left);
+      cur.top = Math.min(cur.top, box.top);
+      cur.right = Math.max(cur.right, box.left + box.width);
+      cur.bottom = Math.max(cur.bottom, box.top + box.height);
+      seatBounds.set(id, cur);
+    }
+    globalThis.__bangSeatBounds = [...seatBounds.values()];
     globalThis.__bangHits = hits;
     globalThis.__bangBoxes = boxes;
     if (typeof onSpots === "function") onSpots(spots);
@@ -749,13 +764,18 @@ export function mountTable(canvas) {
     if (moved < 8 && prev.button === 0) {
       const now = Date.now();
       const info = pick(event.clientX, event.clientY);
-      if (now - lastTap < 320 && !info?.image && !info?.kind) {
+      const rect = canvas.getBoundingClientRect();
+      const localX = event.clientX - rect.left;
+      const localY = event.clientY - rect.top;
+      const seat = (globalThis.__bangSeatBounds || []).find((item) => localX >= item.left && localX <= item.right && localY >= item.top && localY <= item.bottom);
+      const hit = info?.image || info?.kind ? info : (seat ? { kind: "field", playerId: seat.id, image: "seat" } : null);
+      if (now - lastTap < 320 && !hit) {
         lastTap = 0;
         resetView();
         return;
       }
       lastTap = now;
-      if (info?.image || info?.kind) onZoom?.(info);
+      if (hit) onZoom?.(hit);
     } else settleView();
   }
   canvas.addEventListener("pointerup", endFinger);

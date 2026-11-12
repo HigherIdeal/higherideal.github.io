@@ -81,12 +81,12 @@ export function screenToTable(cam, px, py, width, height) {
 }
 
 function handReserve(width) {
-  return width >= 800 ? 132 : 118;
+  return width >= 800 ? 72 : 36;
 }
 
 function playField(width, height) {
   const wide = width >= 800;
-  const top = wide ? 54 : 48;
+  const top = wide ? 54 : 78;
   const side = wide ? 20 : 6;
   const bottom = handReserve(width);
   return {

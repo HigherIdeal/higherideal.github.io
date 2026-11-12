@@ -1,9 +1,9 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=31";
-import { naturalKorean } from "./engine.js?v=31";
-import { applyEffects, captureBefore } from "./motion.js?v=31";
-import { solveProjectedLayout } from "./layout.js?v=31";
-import { mountTable } from "./table3d.js?v=31";
-import { stampURL } from "./stamp.js?v=31";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=32";
+import { naturalKorean } from "./engine.js?v=32";
+import { applyEffects, captureBefore } from "./motion.js?v=32";
+import { solveProjectedLayout } from "./layout.js?v=32";
+import { mountTable } from "./table3d.js?v=32";
+import { stampURL } from "./stamp.js?v=32";
 
 const ui = {
   selected: null,
@@ -1169,7 +1169,7 @@ function syncTable(app, view) {
           ctx.onAction({ type: "draw" });
           return;
         }
-        if (info?.kind === "hand" || info?.kind === "character" || info?.kind === "gear" || info?.kind === "role") {
+        if (info?.kind === "hand" || info?.kind === "field" || info?.kind === "character" || info?.kind === "gear" || info?.kind === "role") {
           openBundle(info.kind === "hand" ? "hand" : "field", info.playerId);
           return;
         }
@@ -1223,10 +1223,10 @@ function placeFelt(felt, view, projected, webgl) {
   const layout = webgl ? null : solveProjectedLayout(window.innerWidth, window.innerHeight, ordered.length);
   const blockers = [];
   if (webgl) {
-    const hand = document.querySelector(".hand-dock")?.getBoundingClientRect();
     const zoom = document.querySelector("#card-zoom:not([hidden]) .zoom-actions")?.getBoundingClientRect();
-    if (hand && hand.height > 8) blockers.push(hand);
+    const bar = document.querySelector(".topbar")?.getBoundingClientRect();
     if (zoom && zoom.width > 8) blockers.push(zoom);
+    if (bar && bar.height > 8) blockers.push(bar);
   }
   ordered.forEach((player, index) => {
     const node = felt.querySelector(player.id === view.yourId ? ".self-tray" : `.seat[data-player="${player.id}"]`);
