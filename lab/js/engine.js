@@ -1406,7 +1406,7 @@ function particle(word, choices) {
 }
 
 function naturalKorean(text) {
-  return String(text).replace(/([^\\s]+?)(을\\(를\\)|이\\(가\\)|은\\(는\\)|과\\(와\\)|으로\\(로\\))/g,
+  return String(text).replace(/([^\s]+?)(을\(를\)|이\(가\)|은\(는\)|과\(와\)|으로\(로\))/g,
     (_, word, pair) => word + particle(word, pair));
 }
 
