@@ -9,8 +9,8 @@ import {
   cardLabel,
   characterById,
   rolesForCount,
-} from "./cards.js?v=16";
-import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=16";
+} from "./cards.js?v=17";
+import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=17";
 
 const WEAPONS = new Set(WEAPON_TYPES);
 
@@ -26,6 +26,7 @@ export function createLobby(host, seed) {
     discard: [],
     chat: [],
     log: [],
+    events: [],
     currentId: null,
     turnPhase: null,
     bangsPlayed: 0,
@@ -118,6 +119,7 @@ function handle(state, playerId, action) {
     case "discard": return confirmDiscard(state, playerId, action.cardIds || []);
     case "respond": return respond(state, playerId, action);
     case "sid": return sidHeal(state, playerId, action.cardIds || []);
+    case "aim": return setAim(state, playerId, action.targetId);
     case "again": return playAgain(state, playerId);
     default: return "알 수 없는 행동입니다.";
   }
@@ -226,6 +228,7 @@ function playAgain(state, playerId) {
   state.dmg = null;
   state.currentId = null;
   state.log = [];
+  state.events = [];
   log(state, "같은 멤버로 새 판을 시작합니다.");
   return startGame(state, state.hostId);
 }
@@ -262,6 +265,7 @@ function beginDynamite(state) {
     state.prompt = { kind: "lucky", playerId: p.id, cards, mode: "dynamite" };
     state.turnPhase = "react";
     log(state, `${p.nickname} 님이 다이너마이트 드로우! 로 두 장을 뒤집었습니다.`);
+    showFlip(state, { cards, caption: `${p.nickname} · 럭키 듀크 다이너마이트 — 한 장을 고릅니다`, to: "hold" });
     return;
   }
   resolveDynamite(state, drawOne(state));
@@ -274,6 +278,11 @@ function resolveDynamite(state, card) {
   log(state, card
     ? `다이너마이트 드로우! — ${cardLabel(card)}. ${boom ? "폭발입니다!" : "넘어갑니다."}`
     : "다이너마이트를 확인할 카드가 없어 넘어갑니다.");
+  showFlip(state, {
+    cards: card ? [card] : [],
+    caption: `${p.nickname} · 다이너마이트 ${card ? cardLabel(card) : ""} — ${boom ? "폭발!" : "넘어감"}`,
+    to: "discard",
+  });
   if (boom) {
     const dyn = p.equipment.dynamite;
     p.equipment.dynamite = null;
@@ -323,6 +332,7 @@ function beginJail(state) {
     state.prompt = { kind: "lucky", playerId: p.id, cards, mode: "jail" };
     state.turnPhase = "react";
     log(state, `${p.nickname} 님이 감옥 드로우! 로 두 장을 뒤집었습니다.`);
+    showFlip(state, { cards, caption: `${p.nickname} · 럭키 듀크 감옥 — 한 장을 고릅니다`, to: "hold" });
     return;
   }
   resolveJail(state, drawOne(state));
@@ -338,6 +348,11 @@ function resolveJail(state, card) {
   log(state, card
     ? `감옥 드로우! — ${cardLabel(card)}. ${free ? "탈출입니다." : "이번 턴은 쉽니다."}`
     : "감옥을 확인할 카드가 없어 턴을 쉽니다.");
+  showFlip(state, {
+    cards: card ? [card] : [],
+    caption: `${p.nickname} · 감옥 ${card ? cardLabel(card) : ""} — ${free ? "탈출!" : "턴을 쉼"}`,
+    to: "discard",
+  });
   if (free) beginDraw(state);
   else nextTurn(state);
 }
@@ -366,6 +381,7 @@ function beginDraw(state) {
     }
     state.prompt = { kind: "kit", playerId: p.id, cards };
     log(state, `${p.nickname} 님이 세 장을 살펴보고 있습니다.`);
+    showFlip(state, { cards, caption: `${p.nickname} · 키트 칼슨 — 세 장 중 한 장을 덱에 올립니다`, to: "hold" });
     return;
   }
   drawTwo(state, null);
@@ -384,6 +400,12 @@ function drawTwo(state, first) {
   if (p.character === "blackjack" && second) {
     const red = second.suit === "hearts" || second.suit === "diamonds";
     log(state, `블랙 잭의 두 번째 카드는 ${cardLabel(second)}입니다.${red ? " 빨간색이라 한 장 더 뽑습니다." : ""}`);
+    showFlip(state, {
+      cards: [second],
+      caption: `${p.nickname} · 블랙 잭 ${cardLabel(second)} — ${red ? "한 장 더!" : "그대로"}`,
+      to: "hand",
+      ownerId: p.id,
+    });
     if (red) {
       const third = drawOne(state);
       if (third) drawn.push(third);
@@ -427,6 +449,7 @@ function playCard(state, playerId, action) {
     state.discard.push(card);
     const target = player(state, action.targetId);
     log(state, `${p.nickname} 님이 ${target.nickname} 님에게 ${CARD_INFO.bang.ko}을(를) 쐈습니다. (${cardLabel(card)})`);
+    markArc(state, p.id, target.id);
     const need = p.character === "slab" ? 2 : 1;
     startDefense(state, target.id, p.id, need, { type: "play" });
     return null;
@@ -526,6 +549,7 @@ function resolveBrownOrBlue(state, p, card, type, action) {
     const target = player(state, action.targetId);
     target.equipment.jail = card;
     log(state, `${p.nickname} 님이 ${target.nickname} 님을 감옥에 넣었습니다.`);
+    markArc(state, p.id, target.id);
     suzy(state, p);
     return null;
   }
@@ -575,6 +599,7 @@ function resolveBrownOrBlue(state, p, card, type, action) {
   }
   if (type === "panic" || type === "catbalou") {
     const target = player(state, action.targetId);
+    markArc(state, p.id, target?.id);
     const moved = takeCard(state, target, action.take);
     if (!moved) {
       log(state, `${p.nickname} 님의 ${CARD_INFO[type].ko}은(는) 가져갈 카드가 없어 효과만 사라졌습니다.`);
@@ -592,6 +617,7 @@ function resolveBrownOrBlue(state, p, card, type, action) {
   if (type === "duel") {
     const target = player(state, action.targetId);
     log(state, `${p.nickname} 님이 ${target.nickname} 님에게 결투를 신청했습니다.`);
+    markArc(state, p.id, target.id);
     state.combat = { kind: "duel", sourceId: p.id, defenderId: target.id, duelTurn: target.id };
     state.prompt = { kind: "discard-bang", playerId: target.id, reason: "duel", sourceId: p.id };
     state.turnPhase = "react";
@@ -701,6 +727,11 @@ function applyLuckyDynamite(state, card) {
   const p = current(state);
   const boom = card && card.suit === "spades" && RANK_VALUE[card.rank] >= 2 && RANK_VALUE[card.rank] <= 9;
   log(state, boom ? "다이너마이트가 폭발했습니다!" : "다이너마이트는 넘어갔습니다.");
+  showFlip(state, {
+    cards: card ? [card] : [],
+    caption: `${current(state).nickname} · 다이너마이트 ${card ? cardLabel(card) : ""} — ${boom ? "폭발!" : "넘어감"}`,
+    to: "discard",
+  });
   if (boom) {
     const dyn = p.equipment.dynamite;
     p.equipment.dynamite = null;
@@ -720,6 +751,11 @@ function applyLuckyJail(state, card) {
   if (jail) state.discard.push(jail);
   const free = card && card.suit === "hearts";
   log(state, free ? "감옥에서 탈출했습니다." : "감옥에서 나오지 못해 턴을 넘깁니다.");
+  showFlip(state, {
+    cards: card ? [card] : [],
+    caption: `${p.nickname} · 감옥 ${card ? cardLabel(card) : ""} — ${free ? "탈출!" : "턴을 쉼"}`,
+    to: "discard",
+  });
   if (free) beginDraw(state);
   else nextTurn(state);
   return null;
@@ -728,7 +764,13 @@ function applyLuckyJail(state, card) {
 function applyLuckyCombat(state, card, label) {
   const hearts = card && card.suit === "hearts";
   const who = player(state, state.combat.defenderId);
-  log(state, `${who.nickname} 님의 ${label === "jourdonnais" ? "주르도네" : "술통"}: ${card ? cardLabel(card) : "카드 없음"} — ${hearts ? "막았습니다." : "실패."}`);
+  const ability = label === "jourdonnais" ? "주르도네" : "술통";
+  log(state, `${who.nickname} 님의 ${ability}: ${card ? cardLabel(card) : "카드 없음"} — ${hearts ? "막았습니다." : "실패."}`);
+  showFlip(state, {
+    cards: card ? [card] : [],
+    caption: `${who.nickname} · ${ability} ${card ? cardLabel(card) : ""} — ${hearts ? "피했다!" : "실패"}`,
+    to: "discard",
+  });
   if (hearts) state.combat.missedGot += 1;
   runChecks(state);
   return null;
@@ -756,6 +798,7 @@ function choosePedro(state, playerId, action) {
   if (action.mode === "discard" && state.discard.length) {
     const card = state.discard.pop();
     log(state, `${player(state, playerId).nickname} 님이 버린 카드 ${cardLabel(card)}을(를) 가져왔습니다.`);
+    showFlip(state, { cards: [card], caption: `${player(state, playerId).nickname} · 페드로 라미레즈 — 버린 카드를 가져감`, to: "hand", ownerId: playerId });
     drawTwo(state, card);
     return null;
   }
@@ -772,6 +815,8 @@ function chooseKit(state, playerId, cardId) {
   p.hand.push(...keep);
   state.prompt = null;
   log(state, `${p.nickname} 님이 두 장을 가져가고 한 장을 덱 위에 올렸습니다.`);
+  showFlip(state, { cards: [putBack], caption: `${p.nickname} · 키트 칼슨 — 이 장을 덱에 올렸습니다`, to: "deck" });
+  showFlip(state, { cards: keep, caption: `${p.nickname} · 키트 칼슨 — 두 장을 가져갑니다`, to: "hand", ownerId: p.id });
   enterPlay(state);
   return null;
 }
@@ -932,6 +977,7 @@ function applySid(state, p, cardIds, fromSave) {
   state.discard.push(...cards);
   p.hp += 1;
   log(state, `${p.nickname} 님이 카드 두 장을 버리고 생명력 1을 회복했습니다. (${p.hp}/${p.maxHp})`);
+  showFlip(state, { cards, caption: `${p.nickname} · 시드 케첨 — 생명 1 회복`, to: "discard" });
   suzy(state, p);
   if (fromSave) pumpDamage(state);
   return null;
@@ -977,6 +1023,11 @@ function runChecks(state) {
     }
     state.prompt = { kind: "lucky", playerId: defender.id, cards, mode: "combat", label };
     log(state, `${defender.nickname} 님이 ${label === "jourdonnais" ? "주르도네" : "술통"} 드로우! 로 두 장을 뒤집었습니다.`);
+    showFlip(state, {
+      cards,
+      caption: `${defender.nickname} · 럭키 듀크 ${label === "jourdonnais" ? "주르도네" : "술통"} — 한 장을 고릅니다`,
+      to: "hold",
+    });
     return;
   }
   resolveCheck(state, drawOne(state), label);
@@ -986,7 +1037,13 @@ function resolveCheck(state, card, label) {
   if (card) state.discard.push(card);
   const hearts = card && card.suit === "hearts";
   const who = player(state, state.combat.defenderId);
-  log(state, `${who.nickname} 님의 ${label === "jourdonnais" ? "주르도네" : "술통"}: ${card ? cardLabel(card) : "카드 없음"} — ${hearts ? "막았습니다." : "실패."}`);
+  const ability = label === "jourdonnais" ? "주르도네" : "술통";
+  log(state, `${who.nickname} 님의 ${ability}: ${card ? cardLabel(card) : "카드 없음"} — ${hearts ? "막았습니다." : "실패."}`);
+  showFlip(state, {
+    cards: card ? [card] : [],
+    caption: `${who.nickname} · ${ability} ${card ? cardLabel(card) : ""} — ${hearts ? "피했다!" : "실패"}`,
+    to: "discard",
+  });
   if (hearts) state.combat.missedGot += 1;
   runChecks(state);
 }
@@ -1160,6 +1217,7 @@ function onLifeLost(state, target, d) {
       const card = src.hand.splice(i, 1)[0];
       target.hand.push(card);
       log(state, `${target.nickname} 님이 ${src.nickname} 님의 손패를 한 장 가져왔습니다.`);
+      showFlip(state, { cards: [card], caption: `${target.nickname} · 엘 그린고 — 손패 한 장을 가져감`, to: "hand", ownerId: target.id });
       suzy(state, src);
     }
   }
@@ -1176,7 +1234,10 @@ function finishDamage(state) {
     if (t.character === "bart") {
       const got = drawUpTo(state, d.lost);
       t.hand.push(...got);
-      if (got.length) log(state, `${t.nickname} 님이 잃은 생명만큼 카드를 ${got.length}장 뽑았습니다.`);
+      if (got.length) {
+        log(state, `${t.nickname} 님이 잃은 생명만큼 카드를 ${got.length}장 뽑았습니다.`);
+        showFlip(state, { cards: got, caption: `${t.nickname} · 버트 캐시디 — 잃은 생명만큼 뽑음`, to: "hand", ownerId: t.id });
+      }
     }
   }
   if (t && t.hp <= 0 && t.alive) eliminate(state, t, d.sourceId);
@@ -1194,6 +1255,7 @@ function eliminate(state, target, killerId) {
   if (vulture && pile.length) {
     vulture.hand.push(...pile);
     log(state, `${target.nickname} 님이 탈락했습니다. 벌쳐 샘이 카드 ${pile.length}장을 가져갔습니다.`);
+    showFlip(state, { cards: pile.slice(0, 6), caption: `${vulture.nickname} · 벌쳐 샘 — 탈락한 카드를 가져감`, to: "hand", ownerId: vulture.id });
     suzy(state, vulture);
   } else {
     if (pile.length) state.discard.push(...pile);
@@ -1254,6 +1316,7 @@ function suzy(state, p) {
   if (!card) return;
   p.hand.push(card);
   log(state, `${p.nickname} 님의 손패가 비어 카드를 1장 뽑았습니다.`);
+  showFlip(state, { cards: [card], caption: `${p.nickname} · 수잔 라파예트 — 빈손으로 한 장 뽑음`, to: "hand", ownerId: p.id });
 }
 
 function drawOne(state) {
@@ -1414,6 +1477,36 @@ function naturalKorean(text) {
 
 export { naturalKorean };
 
+function markArc(state, fromId, toId) {
+  if (!fromId || !toId || fromId === toId) return;
+  state.arc = { fromId, toId, phase: "flash", at: Date.now() };
+}
+
+function setAim(state, playerId, targetId) {
+  if (state.phase !== "play" || state.currentId !== playerId || state.turnPhase !== "play") return null;
+  if (!targetId) {
+    if (state.arc?.phase === "preview") state.arc = null;
+    return null;
+  }
+  const target = player(state, targetId);
+  if (!target?.alive || target.id === playerId) return null;
+  if (state.arc?.phase === "preview" && state.arc.toId === targetId && state.arc.fromId === playerId) return null;
+  state.arc = { fromId: playerId, toId: targetId, phase: "preview", at: Date.now() };
+  return null;
+}
+
+function showFlip(state, { cards, caption, to, ownerId }) {
+  if (!state.events) state.events = [];
+  state.events.push({
+    id: `e${state.events.length}-${state.seed}-${state.log.length}`,
+    cards: (cards || []).filter(Boolean).map(publicCard),
+    caption: naturalKorean(caption),
+    to: to || "discard",
+    ownerId: ownerId || "",
+  });
+  if (state.events.length > 40) state.events.shift();
+}
+
 function log(state, text) {
   state.log.push({ id: `l${state.log.length}-${state.seq}`, text: naturalKorean(text), t: Date.now() });
   if (state.log.length > 80) state.log.shift();
@@ -1441,6 +1534,10 @@ export function projectView(state, viewerId) {
     discardCount: state.discard.length,
     discardTop: state.discard.length ? state.discard[state.discard.length - 1] : null,
     log: state.log.slice(-50),
+    events: (state.events || []).slice(-16),
+    arc: state.arc && (state.arc.phase === "preview" || Date.now() - state.arc.at < 1600)
+      ? { fromId: state.arc.fromId, toId: state.arc.toId, phase: state.arc.phase, at: state.arc.at }
+      : null,
     chat: state.chat.slice(-40),
     prompt,
     store: state.store ? { cards: state.store.cards.map(publicCard), pickerId: state.store.pickerId } : null,

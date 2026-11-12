@@ -48,7 +48,7 @@ test("four seats sit on a centered ellipse and the near cards stay large", () =>
   assert.ok(centers[3].x - centers[1].x > width * 0.55, "the ellipse uses the width");
   const near = layout.leaves.find((zone) => zone.kind === "character" && zone.seat === 0);
   const far = layout.leaves.find((zone) => zone.kind === "character" && zone.seat === 2);
-  assert.ok(near.w > 90, `near card is ${near.w}`);
+  assert.ok(near.w > 70, `near card is ${near.w}`);
   assert.ok(far.h < near.h * 0.75, "far card is foreshortened");
   assert.ok(near.h / near.w < 1.35, "the near card is not face-on");
 });

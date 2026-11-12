@@ -1,8 +1,8 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=16";
-import { naturalKorean } from "./engine.js?v=16";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=16";
-import { solveProjectedLayout } from "./layout.js?v=16";
-import { mountTable } from "./table3d.js?v=16";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=17";
+import { naturalKorean } from "./engine.js?v=17";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=17";
+import { solveProjectedLayout } from "./layout.js?v=17";
+import { mountTable } from "./table3d.js?v=17";
 
 const ui = {
   selected: null,
@@ -52,20 +52,8 @@ function paint(app, ctx) {
   const same = ui.lastHtml === html && app.childElementCount > 0;
   if (!same) {
     const previousFrame = captureBefore(app, previousView);
-    const log = app.querySelector("#log");
-    const stick = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 28;
-    const input = app.querySelector("#chat-input");
-    const typing = input && document.activeElement === input;
-    if (input) ui.chat = input.value;
     app.innerHTML = html;
     ui.lastHtml = html;
-    const nextLog = app.querySelector("#log");
-    if (nextLog && stick) nextLog.scrollTop = nextLog.scrollHeight;
-    const nextInput = app.querySelector("#chat-input");
-    if (nextInput) {
-      nextInput.value = ui.chat;
-      if (typing) nextInput.focus();
-    }
     applyEffects(app, previousView, ctx.view, previousFrame);
   }
   ui.paintedView = ctx.view;
@@ -77,6 +65,7 @@ function paint(app, ctx) {
   app.dataset.yourTurn = view && view.currentId === view.yourId && view.turnPhase === "play" && !view.prompt ? "1" : "0";
   app.dataset.winner = view?.winner?.team || "";
   app.dataset.host = view && view.yourId === view.hostId ? "1" : "0";
+  app.dataset.arc = view?.arc ? "1" : "";
   if (!ui.wired) {
     ui.wired = true;
     app.addEventListener("pointerdown", () => { ui.pointerDown = true; }, true);
@@ -91,6 +80,26 @@ function paint(app, ctx) {
     };
     window.addEventListener("pointerup", release, true);
     window.addEventListener("pointercancel", release, true);
+    let lastAim = "";
+    window.addEventListener("pointermove", (event) => {
+      const ctx = app.__ctx;
+      const view = ctx?.view;
+      if (!view || view.currentId !== view.yourId || view.turnPhase !== "play" || !ui.selected) {
+        if (lastAim) {
+          lastAim = "";
+          ctx?.onAction?.({ type: "aim", targetId: "" });
+        }
+        return;
+      }
+      const seat = event.target?.closest?.("[data-player]");
+      const id = seat && isTarget(view, seat.dataset.player) ? seat.dataset.player : "";
+      if (id === lastAim) return;
+      lastAim = id;
+      globalThis.__bangLocalArc = id
+        ? { fromId: view.yourId, toId: id, phase: "preview", at: Date.now() }
+        : null;
+      ctx.onAction({ type: "aim", targetId: id });
+    });
     app.addEventListener("click", (event) => onClick(event, app));
     app.addEventListener("submit", (event) => onSubmit(event, app));
     wireSpread();
@@ -98,6 +107,7 @@ function paint(app, ctx) {
   }
   renderSpread(ctx);
   syncTable(app, view);
+  syncReveal(view);
 }
 
 function soundButtonHtml() {
@@ -172,7 +182,6 @@ function lobbyHtml(ctx) {
         : `<p class="footnote">${esc(me?.nickname || "")} 님, 방장이 시작하기를 기다리는 중입니다.</p>`}
       <button class="text-btn" type="button" data-action="leave">나가기</button>
     </section>
-    ${dockHtml(ctx)}
     ${toastHtml(ctx)}
     ${helpHtml()}
   </main>`;
@@ -213,7 +222,6 @@ function selectHtml(ctx) {
         </li>`).join("")}
       </ul>
     </section>
-    ${dockHtml(ctx)}
     ${toastHtml(ctx)}
     ${helpHtml()}
   </main>`;
@@ -233,6 +241,7 @@ function tableHtml(ctx) {
         <div class="brand-mini">BANG!</div>
         <p>${esc(phaseLine(view, current))}</p>
         ${soundButtonHtml()}
+        <button type="button" data-action="reset-view">시점</button>
        <button type="button" data-action="help">도움말</button>
       </header>
       <div class="board">
@@ -254,7 +263,6 @@ function tableHtml(ctx) {
       </div>
       </div>
     </section>
-    ${dockHtml(ctx)}
     ${pickerHtml(view)}
     ${toastHtml(ctx)}
     ${helpHtml()}
@@ -310,14 +318,12 @@ function seatHtml(p, view) {
   const reachable = Boolean(me?.alive && p.alive && p.distance != null && p.distance <= range);
   const distanceClass = view.phase !== "play" || !me?.alive ? "" : (selected || reachable ? "is-reachable" : "is-distant");
   const activeTurn = p.id === view.currentId ? "is-turn" : "";
-  return `<div class="seat ${selected ? "is-target" : ""} ${offline ? "is-offline" : ""} ${distanceClass} ${activeTurn}" data-player="${esc(p.id)}" data-presence="${offline ? "off" : "on"}">
+  return `<div class="seat ${selected ? "is-target" : ""} ${offline ? "is-offline" : ""} ${distanceClass} ${activeTurn}" data-player="${esc(p.id)}" data-presence="${offline ? "off" : "on"}" data-distance="${p.distance ?? ""}">
     ${stackHtml(`seat-${p.id}`, seatCards(p, view))}
     <button type="button" class="seat-btn" data-player="${esc(p.id)}" ${selected ? `data-legal-target="1"` : ""} aria-label="${esc(p.nickname)}, 생명 ${p.hp}/${p.maxHp}">
       <span class="who">
+        <span class="bullets" aria-label="생명 ${p.hp}">${bullets(p.hp, p.maxHp)}</span>
         <strong>${esc(p.nickname)}</strong>
-        ${presenceHtml(p)}
-        <span class="life" data-hp="${p.hp}" data-max-hp="${p.maxHp}">${p.hp}/${p.maxHp}</span>
-        <span class="hand-count" title="손패" aria-label="손패 ${p.handCount}장">${p.handCount}</span>
       </span>
     </button>
   </div>`;
@@ -368,9 +374,8 @@ function selfTray(p, view) {
     ${stackHtml("self", seatCards(p, view))}
     <button type="button" class="seat-btn" data-player="${esc(p.id)}" ${selected ? 'data-legal-target="1"' : ""} aria-label="${esc(p.nickname)}, 생명 ${p.hp}/${p.maxHp}">
       <span class="who">
+        <span class="bullets" aria-label="생명 ${p.hp}">${bullets(p.hp, p.maxHp)}</span>
         <strong>${esc(p.nickname)}</strong>
-        ${presenceHtml(p)}
-        <span class="life" data-hp="${p.hp}" data-max-hp="${p.maxHp}">${p.hp}/${p.maxHp}</span>
       </span>
     </button>
   </div>`;
@@ -522,27 +527,6 @@ function phaseLine(view, current) {
   return "게임 진행 중";
 }
 
-function dockHtml(ctx) {
-  const view = ctx.view;
-  const tab = ui.tab;
-  return `<aside class="dock" data-tab="${tab}">
-    <div class="tabs">
-      <button type="button" data-tab="log" class="${tab === "log" ? "on" : ""}">기록</button>
-      <button type="button" data-tab="chat" class="${tab === "chat" ? "on" : ""}">대화</button>
-    </div>
-    <div id="log" class="log" ${tab === "log" ? "" : "hidden"}>
-      ${(view.log || []).map((line) => `<p>${esc(line.text)}</p>`).join("") || `<p class="muted">아직 기록이 없습니다.</p>`}
-    </div>
-    <div class="chat" ${tab === "chat" ? "" : "hidden"}>
-      ${(view.chat || []).map((line) => `<p><b>${esc(line.name)}</b> ${esc(line.text)}</p>`).join("") || `<p class="muted">인사를 남겨 보세요.</p>`}
-    </div>
-    <form data-chat>
-      <input id="chat-input" maxlength="200" placeholder="메시지" autocomplete="off" />
-      <button type="submit">보내기</button>
-    </form>
-  </aside>`;
-}
-
 function toastHtml(ctx) {
   if (!ctx.toast) return "";
   return `<p class="toast" role="status">${esc(ctx.toast)}</p>`;
@@ -567,15 +551,6 @@ function onSubmit(event, app) {
     ctx.onEnter(nickname, code);
     return;
   }
-  if (event.target.matches("[data-chat]")) {
-    event.preventDefault();
-    const input = app.querySelector("#chat-input");
-    const text = input.value.trim();
-    if (!text) return;
-    ui.chat = "";
-    input.value = "";
-    ctx.onAction({ type: "chat", text });
-  }
 }
 
 function onClick(event, app) {
@@ -586,13 +561,13 @@ function onClick(event, app) {
     mount(app, ctx);
     return;
   }
-  if (event.target.closest("[data-action=help]")) app.querySelector("#help")?.showModal();
-  if (event.target.closest("[data-action=close-help]")) app.querySelector("#help")?.close();
-  if (event.target.closest("[data-tab]")) {
-    ui.tab = event.target.closest("[data-tab]").dataset.tab;
-    mount(app, ctx);
+  if (event.target.closest("[data-action=reset-view]")) {
+    ui.gl?.resetView?.();
+    closePeek();
     return;
   }
+  if (event.target.closest("[data-action=help]")) app.querySelector("#help")?.showModal();
+  if (event.target.closest("[data-action=close-help]")) app.querySelector("#help")?.close();
   if (event.target.closest("[data-action=takeover]")) ctx.onTakeOver();
   if (event.target.closest("[data-action=leave]")) ctx.onLeave();
   if (event.target.closest("[data-action=start]")) ctx.onAction({ type: "start" });
@@ -965,7 +940,8 @@ function syncTable(app, view) {
     canvas.addEventListener("pointerdown", (event) => {
       const ctx = app.__ctx;
       if (!ui.gl?.pick || !ctx?.view || !ui.selected) return;
-      const id = ui.gl.pick(event.clientX, event.clientY);
+      const hit = ui.gl.pick(event.clientX, event.clientY);
+      const id = hit?.playerId || "";
       if (id && isTarget(ctx.view, id)) playAt(ctx, ui.selected, id);
     });
   }
@@ -977,6 +953,7 @@ function syncTable(app, view) {
       ui.glCanvas = canvas;
       if (app.dataset.renderer !== "webgl") console.info("[bang] renderer", "webgl");
       app.dataset.renderer = "webgl";
+      ui.gl.setPeek?.(showPeek);
     } else {
       ui.gl = false;
       ui.glCanvas = null;
@@ -1155,6 +1132,100 @@ function finishFan(event) {
     return;
   }
   fanFrame();
+}
+
+const seenReveal = new Set();
+let revealReady = false;
+const revealQueue = [];
+let revealBusy = false;
+
+function syncReveal(view) {
+  if (!view) return;
+  if (!revealReady) {
+    revealReady = true;
+    if (view.phase === "play" || view.phase === "end") {
+      for (const ev of view.events || []) seenReveal.add(ev.id);
+      return;
+    }
+  }
+  for (const ev of view.events || []) {
+    if (!ev?.id || seenReveal.has(ev.id)) continue;
+    seenReveal.add(ev.id);
+    revealQueue.push(ev);
+  }
+  drainReveal();
+}
+
+function showPeek(info) {
+  let layer = document.querySelector("#card-peek");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "card-peek";
+    document.body.appendChild(layer);
+    layer.addEventListener("click", () => closePeek());
+  }
+  layer.hidden = false;
+  layer.innerHTML = `<button type="button" class="peek-card"><img src="${esc(info.image)}" alt="카드" /></button>`;
+}
+
+function closePeek() {
+  const layer = document.querySelector("#card-peek");
+  if (!layer) return;
+  layer.hidden = true;
+  layer.innerHTML = "";
+}
+
+function ensureReveal() {
+  let layer = document.querySelector("#reveal-layer");
+  if (layer) return layer;
+  layer = document.createElement("div");
+  layer.id = "reveal-layer";
+  layer.hidden = true;
+  document.body.appendChild(layer);
+  return layer;
+}
+
+function revealDestination(ev) {
+  if (ev.to === "hand" && ev.ownerId) {
+    const node = document.querySelector(`[data-player="${CSS.escape(ev.ownerId)}"]`);
+    if (node) return node.getBoundingClientRect();
+  }
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  if (ev.to === "deck") return { left: w / 2 - 90, top: h / 2 - 30, width: 64, height: 90 };
+  if (ev.to === "discard") return { left: w / 2 + 24, top: h / 2 - 30, width: 64, height: 90 };
+  return null;
+}
+
+function drainReveal() {
+  if (revealBusy || !revealQueue.length) return;
+  revealBusy = true;
+  const ev = revealQueue.shift();
+  const layer = ensureReveal();
+  const cards = ev.cards || [];
+  layer.hidden = false;
+  layer.innerHTML = `<div class="reveal-stage">
+    <div class="reveal-row">${cards.map((card) => `<div class="reveal-flip"><div class="reveal-inner">${cardArt(card)}</div></div>`).join("")}</div>
+    <p class="reveal-caption">${esc(ev.caption || "")}</p>
+  </div>`;
+  requestAnimationFrame(() => layer.querySelectorAll(".reveal-flip").forEach((node) => node.classList.add("is-up")));
+  const hold = ev.to === "hold" ? 1500 : 1150;
+  window.setTimeout(() => {
+    const dest = revealDestination(ev);
+    const row = layer.querySelector(".reveal-row");
+    if (dest && row) {
+      const from = row.getBoundingClientRect();
+      const dx = dest.left + dest.width / 2 - (from.left + from.width / 2);
+      const dy = dest.top + dest.height / 2 - (from.top + from.height / 2);
+      row.style.transform = `translate(${dx}px, ${dy}px) scale(0.28)`;
+    } else if (row) row.style.opacity = "0";
+    window.setTimeout(() => {
+      layer.hidden = true;
+      layer.innerHTML = "";
+      revealBusy = false;
+      drainReveal();
+    }, ev.to === "hold" ? 240 : 480);
+  }, hold);
 }
 
 function closeFan() {
