@@ -184,6 +184,7 @@ function tableHtml(ctx) {
         <p>${esc(phaseLine(view, current))}</p>
         <button type="button" data-action="help">도움말</button>
       </header>
+      <div class="board">
       <div class="felt"></div>
       ${ring.map((p, i) => (p.id === view.yourId ? "" : seatHtml(p, i, ring.length, view))).join("")}
       ${me?.alive ? selfTray(me, view) : ""}
@@ -197,6 +198,7 @@ function tableHtml(ctx) {
       ${me?.alive && view.phase === "play" ? handHtml(view, me) : ""}
       ${actionBar(view, me)}
       ${ended ? endHtml(view) : ""}
+      </div>
     </section>
     ${dockHtml(ctx)}
     ${pickerHtml(view)}
@@ -208,7 +210,7 @@ function tableHtml(ctx) {
 function seatHtml(p, index, total, view) {
   const theta = Math.PI / 2 + (index / total) * Math.PI * 2;
   const x = 50 + Math.cos(theta) * 37;
-  const y = 44 + Math.sin(theta) * 33;
+  const y = 47 + Math.sin(theta) * 28;
   const ch = characterById(p.character);
   const selected = ui.picker?.targetId === p.id || isTarget(view, p.id);
   const me = p.id === view.yourId;
