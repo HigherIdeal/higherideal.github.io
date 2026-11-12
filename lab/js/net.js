@@ -1,8 +1,10 @@
-import { ROOM_ID } from "./config.js";
-import { addPlayer, autoChoice, createLobby, dispatch, markDisconnect, projectView } from "./engine.js";
+import { ROOM_ID } from "./config.js?v=7";
+import { addPlayer, autoChoice, createLobby, dispatch, markDisconnect, projectView } from "./engine.js?v=7";
 
 const SNAP = "bang-snapshot";
 const LOCK = "bang-host-lock";
+const JOIN_TIMEOUT_MS = 12000;
+const RETRY_MS = 700;
 
 function peerOptions() {
   return {
@@ -30,9 +32,13 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   let destroyed = false;
   let seqSeen = 0;
   let foundHost = false;
-  let searchTimer = 0;
+  let mode = "idle";
+  let attempt = 0;
+  let retryTimer = 0;
+  let roomMisses = 0;
+  let guestSince = 0;
 
-  const report = (mode, text) => onStatus?.({ mode, text, isHost });
+  const report = (kind, text) => onStatus?.({ mode: kind, text, isHost });
   const toast = (text) => { if (text) onToast?.(text); };
 
   function seenAction(id) {
@@ -107,17 +113,16 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       return;
     }
     if (msg.kind === "host-here" && !isHost && msg.hostId !== playerId) {
-      if (!foundHost) {
-        foundHost = true;
-        clearTimeout(searchTimer);
+      foundHost = true;
+      if (mode === "claiming") {
         sessionStorage.setItem("bang-role", "guest");
-        sendHello(guestConn);
-        report("guest", "살롱에 연결되었습니다.");
+        join();
+        return;
       }
+      if (!guestConn?.open) sendHello(null);
       return;
     }
     if (msg.kind === "hello" && isHost) {
-      if (msg.connId && conns.get(msg.from) == null && msg._conn) conns.set(msg.from, msg._conn);
       apply(msg.from, { type: "join", nickname: msg.nickname });
       return;
     }
@@ -127,6 +132,13 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       if (seq < seqSeen) return;
       seqSeen = seq;
       foundHost = true;
+      roomMisses = 0;
+      const reclaiming = sessionStorage.getItem("bang-role") === "host";
+      sessionStorage.setItem("bang-role", "guest");
+      if (mode !== "guest" || reclaiming) {
+        mode = "guest";
+        report("guest", "살롱에 연결되었습니다.");
+      }
       onView(msg.view);
     }
     if (msg.kind === "toast" && msg.to === playerId) toast(msg.text);
@@ -134,60 +146,18 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
 
   channel.onmessage = (event) => ingest(event.data);
 
-  function bindGuest(conn) {
-    guestConn = conn;
-    conn.on("data", (msg) => ingest(msg));
-    conn.on("close", () => {
-      if (guestConn === conn) guestConn = null;
-      if (!destroyed && !isHost) {
-        foundHost = false;
-        report("lost", "방장과 연결이 끊겼습니다. 다시 찾는 중…");
-        setTimeout(() => { if (!destroyed && !isHost) tryJoin(); }, 1200);
-      }
-    });
+  function destroyPeer() {
+    const old = peer;
+    peer = null;
+    guestConn = null;
+    try { old?.destroy(); } catch { /* already gone */ }
   }
 
-  function openHostPeer() {
-    try { peer?.destroy(); } catch { /* already gone */ }
-    peer = new window.Peer(ROOM_ID, peerOptions());
-    peer.on("open", () => {
-      report("host", "당신이 방장입니다.");
-      broadcast();
-    });
-    peer.on("connection", (conn) => {
-      conn.on("data", (msg) => {
-        if (!msg) return;
-        if (msg.kind === "hello") {
-          conn.__pid = msg.from;
-          conns.set(msg.from, conn);
-          apply(msg.from, { type: "join", nickname: msg.nickname });
-        } else if (msg.kind === "action" && conn.__pid) {
-          apply(conn.__pid, msg.action || {});
-        }
-      });
-      conn.on("close", () => {
-        if (conn.__pid) apply(conn.__pid, { type: "disconnect" });
-      });
-    });
-    peer.on("disconnected", () => {
-      if (destroyed || !isHost) return;
-      try { peer.reconnect(); } catch { openHostPeer(); }
-    });
-    peer.on("error", (err) => {
-      if (err?.type === "unavailable-id") {
-        if (sessionStorage.getItem("bang-restoring") === "1" || (isHost && state)) {
-          report("host", "방장 자리를 되찾는 중…");
-          setTimeout(() => { if (!destroyed && isHost) openHostPeer(); }, 1500);
-          return;
-        }
-        isHost = false;
-        foundHost = false;
-        state = null;
-        sessionStorage.setItem("bang-role", "guest");
-        report("search", "이미 열린 살롱에 들어가는 중…");
-        setTimeout(() => { if (!destroyed && !isHost) tryJoin(); }, 400);
-      } else if (!destroyed) toast("실시간 연결이 불안정합니다. 같은 브라우저 탭끼리는 이어서 진행됩니다.");
-    });
+  function releaseLock() {
+    try {
+      const cur = JSON.parse(localStorage.getItem(LOCK) || "null");
+      if (cur?.id === playerId) localStorage.removeItem(LOCK);
+    } catch { /* ignore */ }
   }
 
   function otherHoldsLock() {
@@ -208,18 +178,49 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     } catch { return true; }
   }
 
-  function becomeHost(fresh) {
-    if (destroyed || isHost) return;
-    if (!claimLock()) {
-      sessionStorage.setItem("bang-role", "guest");
-      tryJoin();
-      return;
-    }
+  function armRetry(fn, ms) {
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => {
+      if (!destroyed && !isHost) fn();
+    }, ms);
+  }
+
+  function bindGuest(conn) {
+    guestConn = conn;
+    conn.on("data", (msg) => ingest(msg));
+    conn.on("close", () => {
+      if (guestConn !== conn || destroyed || isHost) return;
+      guestConn = null;
+      foundHost = true;
+      mode = "joining";
+      report("error", "방장과 연결이 끊겼습니다. 다시 찾는 중…");
+      armRetry(join, RETRY_MS);
+    });
+  }
+
+  function becomeGuest(conn) {
+    roomMisses = 0;
+    isHost = false;
+    foundHost = true;
+    mode = "guest";
+    const reclaiming = sessionStorage.getItem("bang-role") === "host";
+    if (!reclaiming) sessionStorage.setItem("bang-role", "guest");
+    sessionStorage.removeItem("bang-restoring");
+    releaseLock();
+    bindGuest(conn);
+    sendHello(conn);
+    guestSince = Date.now();
+    report("guest", reclaiming ? "방장 자리를 되찾는 중…" : "살롱에 연결되었습니다.");
+  }
+
+  function activateHost(restore) {
     isHost = true;
     foundHost = true;
+    mode = "host";
+    roomMisses = 0;
     sessionStorage.setItem("bang-role", "host");
     let restored = null;
-    if (!fresh) {
+    if (restore) {
       try {
         const snap = JSON.parse(localStorage.getItem(SNAP) || "null");
         if (snap?.hostId === playerId && Array.isArray(snap.players)) restored = snap;
@@ -239,50 +240,173 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     }
     localStorage.setItem(LOCK, JSON.stringify({ id: playerId, ts: Date.now() }));
     channel.postMessage({ kind: "host-here", hostId: playerId });
-    if (window.Peer) openHostPeer();
-    else report("host", "당신이 방장입니다. (이 브라우저 안에서)");
+    report("host", "당신이 방장입니다.");
     broadcast();
   }
 
-  function tryJoin() {
-    if (destroyed || isHost) return;
-    report("search", "살롱을 찾는 중…");
-    channel.postMessage({ kind: "discover", from: playerId });
-    clearTimeout(searchTimer);
-    if (window.Peer) {
-      try { peer?.destroy(); } catch { /* ignore */ }
-      peer = new window.Peer(undefined, peerOptions());
-      peer.on("open", () => {
-        const conn = peer.connect(ROOM_ID, { reliable: true, serialization: "json" });
-        let opened = false;
-        const giveUp = setTimeout(() => {
-          if (opened || isHost || destroyed) return;
-          try { conn.close(); } catch { /* ignore */ }
-          if (!foundHost && !otherHoldsLock() && sessionStorage.getItem("bang-role") !== "guest") becomeHost(false);
-          else if (!foundHost) report("lost", "방장을 아직 찾지 못했습니다.");
-        }, 2800);
-        conn.on("open", () => {
-          opened = true;
-          foundHost = true;
-          clearTimeout(giveUp);
-          clearTimeout(searchTimer);
-          sessionStorage.setItem("bang-role", "guest");
-          bindGuest(conn);
-          sendHello(conn);
-          report("guest", "살롱에 연결되었습니다.");
-        });
-        conn.on("error", () => { /* giveUp handles it */ });
-      });
-      peer.on("error", () => { /* giveUp or search timer handles it */ });
+  function onRoomMissing() {
+    const role = sessionStorage.getItem("bang-role");
+    if (role === "host") {
+      report("search", "방장 자리를 되찾는 중…");
+      armRetry(() => claim(true), 400);
+      return;
     }
-    searchTimer = setTimeout(() => {
-      if (destroyed || isHost || foundHost) return;
-      if (otherHoldsLock() || sessionStorage.getItem("bang-role") === "guest") {
-        report("lost", "방장을 아직 찾지 못했습니다.");
+    // A tab that already joined, or can see the host in this browser, must not open another room.
+    if (role === "guest" || foundHost) {
+      roomMisses += 1;
+      if (roomMisses >= 3) report("lost", "방장을 찾지 못했습니다. 다시 시도합니다.");
+      else report("error", "방장과 연결이 끊겼습니다. 다시 찾는 중…");
+      armRetry(join, RETRY_MS);
+      return;
+    }
+    report("search", "살롱을 여는 중…");
+    claim(false);
+  }
+
+  function failJoin() {
+    const role = sessionStorage.getItem("bang-role");
+    if (role === "host") {
+      report("search", "방장 자리를 되찾는 중…");
+      armRetry(() => claim(true), RETRY_MS);
+      return;
+    }
+    report("error", "살롱에 연결하지 못했습니다. 다시 시도합니다.");
+    armRetry(join, RETRY_MS);
+  }
+
+  function join() {
+    if (destroyed || isHost) return;
+    clearTimeout(retryTimer);
+    const token = ++attempt;
+    mode = "joining";
+    const role = sessionStorage.getItem("bang-role");
+    report("search", role === "host" ? "방장 자리를 되찾는 중…" : "살롱을 찾는 중…");
+    channel.postMessage({ kind: "discover", from: playerId });
+    destroyPeer();
+    if (!window.Peer) {
+      report("error", "연결 기능을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.");
+      return;
+    }
+    let local;
+    try {
+      local = new window.Peer(peerOptions());
+    } catch {
+      failJoin();
+      return;
+    }
+    peer = local;
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled || token !== attempt || destroyed || isHost) return;
+      settled = true;
+      failJoin();
+    }, JOIN_TIMEOUT_MS);
+
+    const finish = (fn) => {
+      if (settled || token !== attempt || destroyed || isHost) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+
+    local.on("open", () => {
+      if (settled || token !== attempt || destroyed || isHost) return;
+      let conn;
+      try {
+        conn = local.connect(ROOM_ID, { reliable: true, serialization: "json" });
+      } catch {
+        finish(failJoin);
         return;
       }
-      becomeHost(false);
-    }, 3200);
+      conn.on("open", () => finish(() => becomeGuest(conn)));
+      conn.on("error", (err) => {
+        if (err?.type === "peer-unavailable") finish(onRoomMissing);
+      });
+    });
+
+    local.on("error", (err) => {
+      if (token !== attempt || destroyed) return;
+      if (err?.type === "peer-unavailable") {
+        finish(onRoomMissing);
+        return;
+      }
+      if (err?.type === "unavailable-id" || settled || isHost) return;
+      finish(failJoin);
+    });
+  }
+
+  function claim(restore) {
+    if (destroyed || isHost) return;
+    clearTimeout(retryTimer);
+    const token = ++attempt;
+    mode = "claiming";
+    if (otherHoldsLock() || !claimLock()) {
+      report("search", "이미 열린 살롱에 들어가는 중…");
+      armRetry(join, 300);
+      return;
+    }
+    report("search", restore ? "방장 자리를 되찾는 중…" : "살롱을 여는 중…");
+    destroyPeer();
+    if (!window.Peer) {
+      releaseLock();
+      report("error", "연결 기능을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.");
+      return;
+    }
+    let local;
+    try {
+      local = new window.Peer(ROOM_ID, peerOptions());
+    } catch {
+      releaseLock();
+      failJoin();
+      return;
+    }
+    peer = local;
+    let settled = false;
+
+    local.on("open", () => {
+      if (settled || token !== attempt || destroyed) return;
+      settled = true;
+      activateHost(restore);
+    });
+
+    local.on("connection", (conn) => {
+      conn.on("data", (msg) => {
+        if (!msg || token !== attempt) return;
+        if (msg.kind === "hello") {
+          conn.__pid = msg.from;
+          conns.set(msg.from, conn);
+          apply(msg.from, { type: "join", nickname: msg.nickname });
+        } else if (msg.kind === "action" && conn.__pid) {
+          apply(conn.__pid, msg.action || {});
+        }
+      });
+      conn.on("close", () => {
+        if (conn.__pid) apply(conn.__pid, { type: "disconnect" });
+      });
+    });
+
+    local.on("disconnected", () => {
+      if (destroyed || token !== attempt || !isHost) return;
+      try { local.reconnect(); } catch { /* the error handler reports it */ }
+    });
+
+    local.on("error", (err) => {
+      if (token !== attempt || destroyed) return;
+      // The id is already owned. Attach as a client. Do not keep a private lobby.
+      if (err?.type === "unavailable-id") {
+        if (isHost || settled) return;
+        settled = true;
+        releaseLock();
+        report("search", restore ? "방장 자리를 되찾는 중…" : "이미 열린 살롱에 들어가는 중…");
+        armRetry(join, 350);
+        return;
+      }
+      if (settled || isHost) return;
+      settled = true;
+      releaseLock();
+      report("error", "살롱을 열지 못했습니다. 다시 시도합니다.");
+      armRetry(() => (restore ? claim(true) : join()), RETRY_MS);
+    });
   }
 
   function send(action) {
@@ -300,7 +424,17 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
 
   const heartbeat = setInterval(() => {
     if (destroyed) return;
-    if (!isHost) return;
+    if (!isHost) {
+      if (guestConn?.open && seqSeen === 0) {
+        sendHello(guestConn);
+        // A refreshed host can attach to its own dying socket. If that socket
+        // never sends the room, take the id back instead of sitting in an empty room.
+        if (sessionStorage.getItem("bang-role") === "host" && guestSince && Date.now() - guestSince > 4000) {
+          claim(true);
+        }
+      }
+      return;
+    }
     localStorage.setItem(LOCK, JSON.stringify({ id: playerId, ts: Date.now() }));
     channel.postMessage({ kind: "host-here", hostId: playerId });
     if (!state) return;
@@ -322,25 +456,22 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   window.addEventListener("pagehide", () => {
     destroyed = true;
     clearInterval(heartbeat);
-    clearTimeout(searchTimer);
+    clearTimeout(retryTimer);
     try { peer?.destroy(); } catch { /* ignore */ }
     try { channel.close(); } catch { /* ignore */ }
   }, { once: true });
 
-  if (sessionStorage.getItem("bang-role") === "host") becomeHost(false);
-  else tryJoin();
+  if (sessionStorage.getItem("bang-role") === "host") claim(true);
+  else join();
 
   return {
     send,
     takeOver() {
-      try { peer?.destroy(); } catch { /* ignore */ }
-      peer = null;
-      guestConn = null;
-      isHost = false;
+      if (destroyed || isHost) return;
       foundHost = false;
+      roomMisses = 0;
       sessionStorage.setItem("bang-role", "host");
-      localStorage.removeItem(SNAP);
-      becomeHost(true);
+      claim(false);
     },
   };
 }

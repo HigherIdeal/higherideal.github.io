@@ -1,4 +1,4 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=7";
 
 const ui = {
   selected: null,
@@ -47,6 +47,7 @@ export function mount(app, ctx) {
   }
   const view = ctx.view;
   app.dataset.screen = view?.phase || (ctx.status?.mode === "entry" ? "entry" : "wait");
+  app.dataset.status = ctx.status?.mode || "";
   app.dataset.phase = view?.phase || "";
   app.dataset.prompt = view?.prompt?.mine ? view.prompt.kind : "";
   app.dataset.yourTurn = view && view.currentId === view.yourId && view.turnPhase === "play" && !view.prompt ? "1" : "0";
