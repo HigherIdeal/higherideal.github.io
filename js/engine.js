@@ -1,0 +1,1555 @@
+import {
+  CARD_INFO,
+  CHARACTERS,
+  RANK_VALUE,
+  ROLES,
+  SELF_BLUE,
+  WEAPON_TYPES,
+  baseDeckTemplates,
+  cardLabel,
+  characterById,
+  rolesForCount,
+} from "./cards.js";
+import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js";
+
+const WEAPONS = new Set(WEAPON_TYPES);
+
+export function createLobby(host, seed) {
+  const state = {
+    seq: 0,
+    phase: "lobby",
+    hostId: host.id,
+    seed: seed >>> 0 || 1,
+    nextCard: 1,
+    players: [],
+    deck: [],
+    discard: [],
+    chat: [],
+    log: [],
+    currentId: null,
+    turnPhase: null,
+    bangsPlayed: 0,
+    prompt: null,
+    combat: null,
+    store: null,
+    dmg: null,
+    winner: null,
+  };
+  addPlayer(state, host.id, host.nickname);
+  return state;
+}
+
+export function addPlayer(state, id, nickname) {
+  const existing = state.players.find((p) => p.id === id);
+  if (existing) {
+    existing.connected = true;
+    if (state.phase === "lobby") existing.nickname = cleanName(nickname);
+    return { ok: true, state };
+  }
+  if (state.phase !== "lobby") {
+    return { ok: false, error: "이미 시작된 판입니다. 앉아 있던 사람만 다시 들어올 수 있습니다." };
+  }
+  if (state.players.length >= MAX_PLAYERS) {
+    return { ok: false, error: "방이 가득 찼습니다. (최대 7명)" };
+  }
+  let name = cleanName(nickname);
+  const used = new Set(state.players.map((p) => p.nickname));
+  if (used.has(name)) {
+    let n = 2;
+    while (used.has(`${name}${n}`)) n += 1;
+    name = `${name}${n}`;
+  }
+  state.players.push({
+    id,
+    nickname: name,
+    seat: state.players.length,
+    connected: true,
+    alive: true,
+    role: null,
+    character: null,
+    choices: null,
+    hp: 0,
+    maxHp: 0,
+    hand: [],
+    equipment: emptyEquip(),
+  });
+  return { ok: true, state };
+}
+
+export function markDisconnect(state, id) {
+  const p = player(state, id);
+  if (!p) return state;
+  if (state.phase === "lobby" && id !== state.hostId) {
+    state.players = state.players.filter((x) => x.id !== id);
+    state.players.forEach((pl, i) => { pl.seat = i; });
+  } else {
+    p.connected = false;
+  }
+  return state;
+}
+
+export function dispatch(state, playerId, action) {
+  const error = handle(state, playerId, action || {});
+  if (error) return { ok: false, error };
+  return { ok: true, state };
+}
+
+function handle(state, playerId, action) {
+  switch (action.type) {
+    case "chat": return chat(state, playerId, action.text);
+    case "start": return startGame(state, playerId);
+    case "choose": return chooseCharacter(state, playerId, action.characterId);
+    case "play": return playCard(state, playerId, action);
+    case "end": return endTurn(state, playerId);
+    case "discard": return confirmDiscard(state, playerId, action.cardIds || []);
+    case "respond": return respond(state, playerId, action);
+    case "sid": return sidHeal(state, playerId, action.cardIds || []);
+    case "again": return playAgain(state, playerId);
+    default: return "알 수 없는 행동입니다.";
+  }
+}
+
+function chat(state, playerId, text) {
+  const p = player(state, playerId);
+  if (!p) return "방에 없습니다.";
+  const msg = String(text || "").trim().slice(0, 200);
+  if (!msg) return "내용이 없습니다.";
+  state.chat.push({ id: `m${state.seq}-${state.chat.length}`, name: p.nickname, text: msg, t: Date.now() });
+  if (state.chat.length > 60) state.chat.shift();
+  return null;
+}
+
+function startGame(state, playerId) {
+  if (playerId !== state.hostId) return "방장만 시작할 수 있습니다.";
+  if (state.phase !== "lobby") return "이미 시작된 판입니다.";
+  const n = state.players.length;
+  if (n < MIN_PLAYERS || n > MAX_PLAYERS) return `시작은 ${MIN_PLAYERS}명부터 ${MAX_PLAYERS}명까지입니다.`;
+  const roles = shuffle(state, rolesForCount(n));
+  const chars = shuffle(state, CHARACTERS.map((c) => c.id));
+  state.players.forEach((p, i) => {
+    p.role = roles[i];
+    p.choices = [chars[i * 2], chars[i * 2 + 1]];
+    p.character = null;
+    p.hp = 0;
+    p.maxHp = 0;
+    p.hand = [];
+    p.equipment = emptyEquip();
+    p.alive = true;
+    p.connected = p.connected !== false;
+  });
+  state.deck = shuffle(state, baseDeckTemplates().map((c) => mint(state, c.type, c.suit, c.rank)));
+  state.discard = [];
+  state.winner = null;
+  state.prompt = null;
+  state.combat = null;
+  state.store = null;
+  state.dmg = null;
+  state.phase = "select";
+  state.turnPhase = null;
+  state.currentId = null;
+  const sheriff = state.players.find((p) => p.role === "sheriff");
+  log(state, `역할이 나누어졌습니다. 보안관은 ${sheriff.nickname} 님입니다.`);
+  log(state, "각자 인물 카드 두 장 중 하나를 고르세요.");
+  return null;
+}
+
+function chooseCharacter(state, playerId, characterId) {
+  if (state.phase !== "select") return "지금 인물을 고르는 시간이 아닙니다.";
+  const p = player(state, playerId);
+  if (!p) return "방에 없습니다.";
+  if (p.character) return "이미 인물을 골랐습니다.";
+  if (!p.choices || !p.choices.includes(characterId)) return "그 인물은 선택할 수 없습니다.";
+  p.character = characterId;
+  const ch = characterById(characterId);
+  log(state, `${p.nickname} 님이 ${ch.name}을(를) 골랐습니다.`);
+  p.choices = null;
+  if (state.players.every((x) => x.character)) beginPlay(state);
+  return null;
+}
+
+function beginPlay(state) {
+  for (const p of state.players) {
+    const base = characterById(p.character).hp;
+    p.maxHp = base + (p.role === "sheriff" ? 1 : 0);
+    p.hp = p.maxHp;
+    p.hand = [];
+    for (let i = 0; i < p.maxHp; i += 1) {
+      const c = drawOne(state);
+      if (c) p.hand.push(c);
+    }
+  }
+  state.phase = "play";
+  log(state, "카드를 나누고 게임을 시작합니다. 보안관부터입니다.");
+  const sheriff = state.players.find((p) => p.role === "sheriff");
+  startTurn(state, sheriff.id);
+}
+
+function playAgain(state, playerId) {
+  if (playerId !== state.hostId) return "방장만 한 판 더 할 수 있습니다.";
+  if (state.phase !== "end") return "아직 판이 끝나지 않았습니다.";
+  const players = state.players.map((p) => ({
+    id: p.id,
+    nickname: p.nickname,
+    seat: p.seat,
+    connected: p.connected,
+    alive: true,
+    role: null,
+    character: null,
+    choices: null,
+    hp: 0,
+    maxHp: 0,
+    hand: [],
+    equipment: emptyEquip(),
+  }));
+  state.players = players;
+  state.phase = "lobby";
+  state.winner = null;
+  state.deck = [];
+  state.discard = [];
+  state.prompt = null;
+  state.combat = null;
+  state.store = null;
+  state.dmg = null;
+  state.currentId = null;
+  state.log = [];
+  log(state, "같은 멤버로 새 판을 시작합니다.");
+  return startGame(state, state.hostId);
+}
+
+function startTurn(state, id) {
+  if (state.phase === "end") return;
+  const p = player(state, id);
+  if (!p || !p.alive) {
+    nextTurn(state);
+    return;
+  }
+  state.currentId = id;
+  state.bangsPlayed = 0;
+  state.turnPhase = "start";
+  state.prompt = null;
+  state.combat = null;
+  log(state, `${p.nickname} 님의 턴입니다.`);
+  if (p.equipment.dynamite) beginDynamite(state);
+  else beginJail(state);
+}
+
+function beginDynamite(state) {
+  const p = current(state);
+  if (p.character === "lucky") {
+    const cards = drawUpTo(state, 2);
+    if (cards.length === 0) {
+      resolveDynamite(state, null);
+      return;
+    }
+    if (cards.length === 1) {
+      resolveDynamite(state, cards[0]);
+      return;
+    }
+    state.prompt = { kind: "lucky", playerId: p.id, cards, mode: "dynamite" };
+    state.turnPhase = "react";
+    log(state, `${p.nickname} 님이 다이너마이트 드로우! 로 두 장을 뒤집었습니다.`);
+    return;
+  }
+  resolveDynamite(state, drawOne(state));
+}
+
+function resolveDynamite(state, card) {
+  const p = current(state);
+  if (card) state.discard.push(card);
+  const boom = card && card.suit === "spades" && RANK_VALUE[card.rank] >= 2 && RANK_VALUE[card.rank] <= 9;
+  log(state, card
+    ? `다이너마이트 드로우! — ${cardLabel(card)}. ${boom ? "폭발입니다!" : "넘어갑니다."}`
+    : "다이너마이트를 확인할 카드가 없어 넘어갑니다.");
+  if (boom) {
+    const dyn = p.equipment.dynamite;
+    p.equipment.dynamite = null;
+    if (dyn) state.discard.push(dyn);
+    inflict(state, p.id, 3, { sourceId: null, elGringo: false, resume: { type: "afterDynamite" } });
+    return;
+  }
+  passDynamite(state, p);
+  beginJail(state);
+}
+
+function passDynamite(state, from) {
+  const dyn = from.equipment.dynamite;
+  if (!dyn) return;
+  from.equipment.dynamite = null;
+  const next = clockwise(state, from.id);
+  if (!next || next.id === from.id) {
+    from.equipment.dynamite = dyn;
+    return;
+  }
+  next.equipment.dynamite = dyn;
+  log(state, `다이너마이트가 ${next.nickname} 님에게 넘어갔습니다.`);
+}
+
+function afterDynamite(state) {
+  if (state.phase === "end") return;
+  const p = current(state);
+  if (!p || !p.alive) {
+    nextTurn(state);
+    return;
+  }
+  beginJail(state);
+}
+
+function beginJail(state) {
+  const p = current(state);
+  if (!p.equipment.jail) {
+    beginDraw(state);
+    return;
+  }
+  if (p.character === "lucky") {
+    const cards = drawUpTo(state, 2);
+    if (cards.length <= 1) {
+      resolveJail(state, cards[0] || null);
+      return;
+    }
+    state.prompt = { kind: "lucky", playerId: p.id, cards, mode: "jail" };
+    state.turnPhase = "react";
+    log(state, `${p.nickname} 님이 감옥 드로우! 로 두 장을 뒤집었습니다.`);
+    return;
+  }
+  resolveJail(state, drawOne(state));
+}
+
+function resolveJail(state, card) {
+  const p = current(state);
+  if (card) state.discard.push(card);
+  const jail = p.equipment.jail;
+  p.equipment.jail = null;
+  if (jail) state.discard.push(jail);
+  const free = card && card.suit === "hearts";
+  log(state, card
+    ? `감옥 드로우! — ${cardLabel(card)}. ${free ? "탈출입니다." : "이번 턴은 쉽니다."}`
+    : "감옥을 확인할 카드가 없어 턴을 쉽니다.");
+  if (free) beginDraw(state);
+  else nextTurn(state);
+}
+
+function beginDraw(state) {
+  const p = current(state);
+  state.turnPhase = "draw";
+  if (p.character === "jesse") {
+    const options = alive(state).filter((o) => o.id !== p.id && o.hand.length > 0).map((o) => o.id);
+    if (options.length) {
+      state.prompt = { kind: "jesse", playerId: p.id, options };
+      return;
+    }
+  }
+  if (p.character === "pedro" && state.discard.length > 0) {
+    state.prompt = { kind: "pedro", playerId: p.id, top: state.discard[state.discard.length - 1] };
+    return;
+  }
+  if (p.character === "kit") {
+    const cards = drawUpTo(state, 3);
+    if (cards.length < 3) {
+      p.hand.push(...cards.filter(Boolean));
+      log(state, `${p.nickname} 님이 카드를 ${cards.length}장 뽑았습니다.`);
+      enterPlay(state);
+      return;
+    }
+    state.prompt = { kind: "kit", playerId: p.id, cards };
+    log(state, `${p.nickname} 님이 세 장을 살펴보고 있습니다.`);
+    return;
+  }
+  drawTwo(state, null);
+}
+
+function drawTwo(state, first) {
+  const p = current(state);
+  const drawn = [];
+  if (first) drawn.push(first);
+  else {
+    const c = drawOne(state);
+    if (c) drawn.push(c);
+  }
+  const second = drawOne(state);
+  if (second) drawn.push(second);
+  if (p.character === "blackjack" && second) {
+    const red = second.suit === "hearts" || second.suit === "diamonds";
+    log(state, `블랙 잭의 두 번째 카드는 ${cardLabel(second)}입니다.${red ? " 빨간색이라 한 장 더 뽑습니다." : ""}`);
+    if (red) {
+      const third = drawOne(state);
+      if (third) drawn.push(third);
+    }
+  } else {
+    log(state, `${p.nickname} 님이 카드를 ${drawn.length}장 뽑았습니다.`);
+  }
+  for (const c of drawn) if (c) p.hand.push(c);
+  enterPlay(state);
+}
+
+function enterPlay(state) {
+  if (state.phase === "end") return;
+  state.turnPhase = "play";
+  state.prompt = null;
+  suzy(state, current(state));
+}
+
+function playCard(state, playerId, action) {
+  if (state.phase !== "play" || state.turnPhase !== "play") return "지금은 카드를 낼 수 없습니다.";
+  if (state.currentId !== playerId) return "당신의 턴이 아닙니다.";
+  if (state.prompt) return "먼저 진행 중인 선택을 마치세요.";
+  const p = player(state, playerId);
+  const idx = p.hand.findIndex((c) => c.id === action.cardId);
+  if (idx < 0) return "그 카드는 손에 없습니다.";
+  const card = p.hand[idx];
+  const type = effectiveType(p, card, "play");
+  if (type === "missed") return "빗나감!은 공격을 막을 때만 낼 수 있습니다.";
+  if (type === "bang") {
+    const why = bangBlockReason(state, p, action.targetId);
+    if (why) return why;
+  }
+  if (CARD_INFO[type].target || type === "jail") {
+    const target = player(state, action.targetId);
+    const why = targetBlockReason(state, p, type, target, action.take);
+    if (why) return why;
+  }
+  p.hand.splice(idx, 1);
+  if (type === "bang") {
+    state.bangsPlayed += 1;
+    state.discard.push(card);
+    const target = player(state, action.targetId);
+    log(state, `${p.nickname} 님이 ${target.nickname} 님에게 ${CARD_INFO.bang.ko}을(를) 쐈습니다. (${cardLabel(card)})`);
+    const need = p.character === "slab" ? 2 : 1;
+    startDefense(state, target.id, p.id, need, { type: "play" });
+    return null;
+  }
+  return resolveBrownOrBlue(state, p, card, type, action);
+}
+
+function effectiveType(p, card, context) {
+  if (p.character !== "calamity") return card.type;
+  if (context === "play" && card.type === "missed") return "bang";
+  if (context === "miss" && card.type === "bang") return "missed";
+  if (context === "asbang" && card.type === "missed") return "bang";
+  return card.type;
+}
+
+function bangBlockReason(state, p, targetId) {
+  if (!unlimitedBang(p) && state.bangsPlayed >= 1) return "이번 턴에는 뱅!을 이미 사용했습니다.";
+  const target = player(state, targetId);
+  if (!target || !target.alive || target.id === p.id) return "쏠 대상을 고르세요.";
+  const dist = distance(state, p, target);
+  const range = weaponRange(p);
+  if (dist > range) return `사정거리 밖입니다. (거리 ${dist}, 사거리 ${range})`;
+  return null;
+}
+
+function unlimitedBang(p) {
+  return p.character === "willy" || p.equipment.weapon?.type === "volcanic";
+}
+
+function targetBlockReason(state, p, type, target, take) {
+  if (type === "jail") {
+    if (!target || !target.alive) return "가둘 대상을 고르세요.";
+    if (target.role === "sheriff") return "보안관은 감옥에 넣을 수 없습니다.";
+    if (target.equipment.jail) return "이미 감옥에 있는 플레이어입니다.";
+    return null;
+  }
+  if (type === "duel" || type === "catbalou") {
+    if (!target || !target.alive || target.id === p.id && type === "duel") return "대상을 고르세요.";
+    if (!target || !target.alive) return "대상을 고르세요.";
+    if (type === "catbalou") return takeReason(p, target, take, true);
+    return null;
+  }
+  if (type === "panic") {
+    if (!target || !target.alive) return "빼앗을 대상을 고르세요.";
+    if (target.id !== p.id && distance(state, p, target) > 1) return "강탈!은 거리 1만 가능합니다.";
+    return takeReason(p, target, take, false);
+  }
+  return null;
+}
+
+function takeReason(p, target, take, discardOnly) {
+  const self = target.id === p.id;
+  const equips = equipList(target);
+  if (self && discardOnly) {
+    if (!take) {
+      if (!target.hand.length && !equips.length) return null;
+      if (equips.length || target.hand.length) return "버릴 카드를 고르세요.";
+    }
+    return null;
+  }
+  if (self && !discardOnly) {
+    if (!equips.length) return "가져올 장착 카드가 없습니다.";
+    if (!take || take === "hand") return "가져올 장착 카드를 고르세요.";
+    return null;
+  }
+  if (!target.hand.length && !equips.length) {
+    return discardOnly ? null : "가져올 카드가 없습니다.";
+  }
+  if (!take) return discardOnly ? "버릴 카드를 고르세요." : "가져올 카드를 고르세요.";
+  if (take === "hand" && !target.hand.length) return "손패가 없습니다.";
+  return null;
+}
+
+function resolveBrownOrBlue(state, p, card, type, action) {
+  if (WEAPONS.has(type)) {
+    if (p.equipment.weapon) state.discard.push(p.equipment.weapon);
+    p.equipment.weapon = card;
+    log(state, `${p.nickname} 님이 ${CARD_INFO[type].ko}을(를) 장착했습니다. 사거리 ${CARD_INFO[type].range}.`);
+    suzy(state, p);
+    return null;
+  }
+  if (SELF_BLUE.includes(type)) {
+    if (type !== "dynamite" && p.equipment[type]) {
+      p.hand.push(card);
+      return "이미 같은 카드가 앞에 있습니다.";
+    }
+    if (type === "dynamite" && p.equipment.dynamite) {
+      p.hand.push(card);
+      return "이미 다이너마이트가 눈앞에 있습니다.";
+    }
+    p.equipment[type] = card;
+    log(state, `${p.nickname} 님이 ${CARD_INFO[type].ko}을(를) 앞에 내려놓았습니다.`);
+    suzy(state, p);
+    return null;
+  }
+  if (type === "jail") {
+    const target = player(state, action.targetId);
+    target.equipment.jail = card;
+    log(state, `${p.nickname} 님이 ${target.nickname} 님을 감옥에 넣었습니다.`);
+    suzy(state, p);
+    return null;
+  }
+  state.discard.push(card);
+  if (type === "beer") {
+    if (alive(state).length <= 2) log(state, `${p.nickname} 님이 맥주를 마셨지만, 둘이 남아 효과가 없습니다.`);
+    else if (p.hp >= p.maxHp) log(state, `${p.nickname} 님이 맥주를 마셨지만 생명력이 이미 가득합니다.`);
+    else {
+      p.hp += 1;
+      log(state, `${p.nickname} 님이 맥주로 생명력 1을 회복했습니다. (${p.hp}/${p.maxHp})`);
+    }
+    suzy(state, p);
+    return null;
+  }
+  if (type === "saloon") {
+    for (const t of alive(state)) {
+      if (t.hp < t.maxHp) {
+        t.hp += 1;
+        log(state, `${t.nickname} 님이 주점에서 생명력 1을 회복했습니다. (${t.hp}/${t.maxHp})`);
+      }
+    }
+    suzy(state, p);
+    return null;
+  }
+  if (type === "stagecoach" || type === "wells") {
+    const n = type === "wells" ? 3 : 2;
+    const got = drawUpTo(state, n);
+    p.hand.push(...got);
+    log(state, `${p.nickname} 님이 ${CARD_INFO[type].ko}로 카드를 ${got.length}장 뽑았습니다.`);
+    suzy(state, p);
+    return null;
+  }
+  if (type === "store") {
+    const people = alive(state);
+    const cards = drawUpTo(state, people.length);
+    if (!cards.length) {
+      log(state, "잡화점에 깔 카드가 없습니다.");
+      suzy(state, p);
+      return null;
+    }
+    state.store = { cards, pickerId: p.id, order: people.map((x) => x.id) };
+    state.prompt = { kind: "store", playerId: p.id };
+    state.turnPhase = "react";
+    log(state, `${p.nickname} 님이 잡화점을 열었습니다. 카드 ${cards.length}장이 깔렸습니다.`);
+    suzy(state, p);
+    return null;
+  }
+  if (type === "panic" || type === "catbalou") {
+    const target = player(state, action.targetId);
+    const moved = takeCard(state, target, action.take);
+    if (!moved) {
+      log(state, `${p.nickname} 님의 ${CARD_INFO[type].ko}은(는) 가져갈 카드가 없어 효과만 사라졌습니다.`);
+    } else if (type === "panic") {
+      p.hand.push(moved);
+      log(state, `${p.nickname} 님이 ${target.nickname} 님에게서 ${publicTakeName(action.take, moved)} 가져왔습니다.`);
+    } else {
+      state.discard.push(moved);
+      log(state, `${p.nickname} 님이 ${target.nickname} 님의 ${publicTakeName(action.take, moved)} 버리게 했습니다.`);
+    }
+    suzy(state, target);
+    suzy(state, p);
+    return null;
+  }
+  if (type === "duel") {
+    const target = player(state, action.targetId);
+    log(state, `${p.nickname} 님이 ${target.nickname} 님에게 결투를 신청했습니다.`);
+    state.combat = { kind: "duel", sourceId: p.id, defenderId: target.id, duelTurn: target.id };
+    state.prompt = { kind: "discard-bang", playerId: target.id, reason: "duel", sourceId: p.id };
+    state.turnPhase = "react";
+    suzy(state, p);
+    return null;
+  }
+  if (type === "indians") {
+    const queue = othersClockwise(state, p.id);
+    log(state, `${p.nickname} 님이 인디언!을 불렀습니다.`);
+    state.combat = { kind: "indians", sourceId: p.id, queue };
+    suzy(state, p);
+    nextIndians(state);
+    return null;
+  }
+  if (type === "gatling") {
+    const queue = othersClockwise(state, p.id);
+    log(state, `${p.nickname} 님이 기관총을 난사했습니다.`);
+    state.combat = { kind: "gatling", sourceId: p.id, queue };
+    suzy(state, p);
+    nextGatling(state);
+    return null;
+  }
+  p.hand.push(card);
+  state.discard.pop();
+  return "그 카드는 아직 처리할 수 없습니다.";
+}
+
+function publicTakeName(take, card) {
+  if (take === "hand") return "손패를";
+  return `${cardLabel(card)}을(를)`;
+}
+
+function takeCard(state, target, take) {
+  if (take === "hand") {
+    if (!target.hand.length) return null;
+    const i = Math.floor(rand(state) * target.hand.length);
+    return target.hand.splice(i, 1)[0];
+  }
+  return pullEquip(target, take);
+}
+
+function endTurn(state, playerId) {
+  if (state.phase !== "play" || state.currentId !== playerId) return "당신의 턴이 아닙니다.";
+  if (state.turnPhase !== "play" || state.prompt) return "아직 턴을 끝낼 수 없습니다.";
+  const p = player(state, playerId);
+  const extra = p.hand.length - p.hp;
+  if (extra > 0) {
+    state.prompt = { kind: "discard", playerId: p.id, count: extra };
+    state.turnPhase = "discard";
+    log(state, `${p.nickname} 님은 카드를 ${extra}장 버려야 합니다.`);
+    return null;
+  }
+  nextTurn(state);
+  return null;
+}
+
+function confirmDiscard(state, playerId, cardIds) {
+  const prompt = state.prompt;
+  if (!prompt || prompt.kind !== "discard" || prompt.playerId !== playerId) return "버릴 차례가 아닙니다.";
+  const p = player(state, playerId);
+  const unique = [...new Set(cardIds)];
+  if (unique.length !== prompt.count) return `${prompt.count}장을 골라 버리세요.`;
+  const cards = [];
+  for (const id of unique) {
+    const idx = p.hand.findIndex((c) => c.id === id);
+    if (idx < 0) return "손에 없는 카드입니다.";
+    cards.push(p.hand.splice(idx, 1)[0]);
+  }
+  state.discard.push(...cards);
+  log(state, `${p.nickname} 님이 카드 ${cards.length}장을 버렸습니다.`);
+  suzy(state, p);
+  state.prompt = null;
+  nextTurn(state);
+  return null;
+}
+
+function respond(state, playerId, action) {
+  const prompt = state.prompt;
+  if (!prompt || prompt.playerId !== playerId) return "응답할 차례가 아닙니다.";
+  if (prompt.kind === "lucky") return chooseLucky(state, playerId, action.cardId);
+  if (prompt.kind === "jesse") return chooseJesse(state, playerId, action);
+  if (prompt.kind === "pedro") return choosePedro(state, playerId, action);
+  if (prompt.kind === "kit") return chooseKit(state, playerId, action.cardId);
+  if (prompt.kind === "miss") return chooseMiss(state, playerId, action);
+  if (prompt.kind === "discard-bang") return chooseDiscardBang(state, playerId, action);
+  if (prompt.kind === "save") return chooseSave(state, playerId, action);
+  if (prompt.kind === "store") return chooseStore(state, playerId, action.cardId);
+  return "응답할 수 없습니다.";
+}
+
+function chooseLucky(state, playerId, cardId) {
+  const prompt = state.prompt;
+  const chosen = prompt.cards.find((c) => c.id === cardId) || prompt.cards[0];
+  const mode = prompt.mode;
+  const label = prompt.label;
+  state.discard.push(...prompt.cards);
+  log(state, `${player(state, playerId).nickname} 님이 드로우! 결과로 ${cardLabel(chosen)}을(를) 골랐습니다.`);
+  state.prompt = null;
+  if (mode === "dynamite") return applyLuckyDynamite(state, chosen);
+  if (mode === "jail") return applyLuckyJail(state, chosen);
+  if (mode === "combat") return applyLuckyCombat(state, chosen, label);
+  return "드로우를 마칠 수 없습니다.";
+}
+
+function applyLuckyDynamite(state, card) {
+  // chooseLucky already discarded the flipped cards. Evaluate `card` only.
+  const p = current(state);
+  const boom = card && card.suit === "spades" && RANK_VALUE[card.rank] >= 2 && RANK_VALUE[card.rank] <= 9;
+  log(state, boom ? "다이너마이트가 폭발했습니다!" : "다이너마이트는 넘어갔습니다.");
+  if (boom) {
+    const dyn = p.equipment.dynamite;
+    p.equipment.dynamite = null;
+    if (dyn) state.discard.push(dyn);
+    inflict(state, p.id, 3, { sourceId: null, elGringo: false, resume: { type: "afterDynamite" } });
+  } else {
+    passDynamite(state, p);
+    beginJail(state);
+  }
+  return null;
+}
+
+function applyLuckyJail(state, card) {
+  const p = current(state);
+  const jail = p.equipment.jail;
+  p.equipment.jail = null;
+  if (jail) state.discard.push(jail);
+  const free = card && card.suit === "hearts";
+  log(state, free ? "감옥에서 탈출했습니다." : "감옥에서 나오지 못해 턴을 넘깁니다.");
+  if (free) beginDraw(state);
+  else nextTurn(state);
+  return null;
+}
+
+function applyLuckyCombat(state, card, label) {
+  const hearts = card && card.suit === "hearts";
+  const who = player(state, state.combat.defenderId);
+  log(state, `${who.nickname} 님의 ${label === "jourdonnais" ? "주르도네" : "술통"}: ${card ? cardLabel(card) : "카드 없음"} — ${hearts ? "막았습니다." : "실패."}`);
+  if (hearts) state.combat.missedGot += 1;
+  runChecks(state);
+  return null;
+}
+
+function chooseJesse(state, playerId, action) {
+  state.prompt = null;
+  if (action.mode === "player") {
+    const target = player(state, action.targetId);
+    const p = player(state, playerId);
+    if (!target || target.id === p.id || !target.alive || !target.hand.length) return "그 손패는 가져올 수 없습니다.";
+    const i = Math.floor(rand(state) * target.hand.length);
+    const card = target.hand.splice(i, 1)[0];
+    log(state, `${p.nickname} 님이 ${target.nickname} 님의 손패에서 첫 카드를 가져왔습니다.`);
+    suzy(state, target);
+    drawTwo(state, card);
+    return null;
+  }
+  drawTwo(state, null);
+  return null;
+}
+
+function choosePedro(state, playerId, action) {
+  state.prompt = null;
+  if (action.mode === "discard" && state.discard.length) {
+    const card = state.discard.pop();
+    log(state, `${player(state, playerId).nickname} 님이 버린 카드 ${cardLabel(card)}을(를) 가져왔습니다.`);
+    drawTwo(state, card);
+    return null;
+  }
+  drawTwo(state, null);
+  return null;
+}
+
+function chooseKit(state, playerId, cardId) {
+  const prompt = state.prompt;
+  const putBack = prompt.cards.find((c) => c.id === cardId) || prompt.cards[0];
+  const keep = prompt.cards.filter((c) => c.id !== putBack.id);
+  state.deck.push(putBack);
+  const p = player(state, playerId);
+  p.hand.push(...keep);
+  state.prompt = null;
+  log(state, `${p.nickname} 님이 두 장을 가져가고 한 장을 덱 위에 올렸습니다.`);
+  enterPlay(state);
+  return null;
+}
+
+function chooseMiss(state, playerId, action) {
+  const combat = state.combat;
+  const p = player(state, playerId);
+  if (action.choice === "take") {
+    log(state, `${p.nickname} 님이 공격을 맞았습니다.`);
+    const resume = combat.resume;
+    const sourceId = combat.sourceId;
+    state.prompt = null;
+    inflict(state, p.id, 1, { sourceId, elGringo: true, resume });
+    return null;
+  }
+  const idx = p.hand.findIndex((c) => c.id === action.cardId);
+  if (idx < 0) return "그 카드는 손에 없습니다.";
+  const card = p.hand[idx];
+  const asMiss = card.type === "missed" || (p.character === "calamity" && card.type === "bang");
+  if (!asMiss) return "빗나감!으로 막을 수 있는 카드가 아닙니다.";
+  p.hand.splice(idx, 1);
+  state.discard.push(card);
+  combat.missedGot += 1;
+  log(state, `${p.nickname} 님이 ${cardLabel(card)}으로 막았습니다. (${combat.missedGot}/${combat.missedNeed})`);
+  suzy(state, p);
+  if (combat.missedGot >= combat.missedNeed) {
+    defenseSuccess(state);
+    return null;
+  }
+  state.prompt = { ...state.prompt, got: combat.missedGot };
+  return null;
+}
+
+function chooseDiscardBang(state, playerId, action) {
+  const p = player(state, playerId);
+  const combat = state.combat;
+  if (action.choice === "take") {
+    const reason = combat.kind === "duel" ? "결투" : "인디언";
+    log(state, `${p.nickname} 님이 ${reason}에서 뱅!을 내지 못했습니다.`);
+    failBangDiscard(state, p.id);
+    return null;
+  }
+  const idx = p.hand.findIndex((c) => c.id === action.cardId);
+  if (idx < 0) return "그 카드는 손에 없습니다.";
+  const card = p.hand[idx];
+  const asBang = card.type === "bang" || (p.character === "calamity" && card.type === "missed");
+  if (!asBang) return "뱅! 카드만 낼 수 있습니다.";
+  p.hand.splice(idx, 1);
+  state.discard.push(card);
+  log(state, `${p.nickname} 님이 ${cardLabel(card)}을(를) 냈습니다.`);
+  suzy(state, p);
+  if (combat.kind === "duel") {
+    combat.duelTurn = combat.duelTurn === combat.sourceId ? combat.defenderId : combat.sourceId;
+    state.prompt = { kind: "discard-bang", playerId: combat.duelTurn, reason: "duel", sourceId: combat.sourceId };
+    return null;
+  }
+  nextIndians(state);
+  return null;
+}
+
+function failBangDiscard(state, loserId) {
+  const combat = state.combat;
+  if (combat.kind === "duel") {
+    const selfInflicted = loserId === combat.sourceId;
+    state.prompt = null;
+    inflict(state, loserId, 1, {
+      sourceId: selfInflicted ? null : combat.sourceId,
+      elGringo: !selfInflicted,
+      resume: { type: "play" },
+    });
+    return;
+  }
+  state.prompt = null;
+  inflict(state, loserId, 1, { sourceId: combat.sourceId, elGringo: true, resume: { type: "nextIndians" } });
+}
+
+function chooseSave(state, playerId, action) {
+  const p = player(state, playerId);
+  if (action.choice === "beer") {
+    if (alive(state).length <= 2) return "둘이 남으면 맥주는 효과가 없습니다.";
+    const idx = p.hand.findIndex((c) => c.id === action.cardId && c.type === "beer");
+    if (idx < 0) return "맥주가 없습니다.";
+    const card = p.hand.splice(idx, 1)[0];
+    state.discard.push(card);
+    if (p.hp < p.maxHp) p.hp += 1;
+    log(state, `${p.nickname} 님이 맥주로 버텼습니다. (생명 ${p.hp})`);
+    suzy(state, p);
+    pumpDamage(state);
+    return null;
+  }
+  if (action.choice === "sid") {
+    return applySid(state, p, action.cardIds || [], true);
+  }
+  if (action.choice === "accept") {
+    const d = state.dmg;
+    d.lost += p.hp;
+    for (let i = 0; i < p.hp; i += 1) onLifeLost(state, p, d);
+    p.hp = 0;
+    d.amount = 0;
+    log(state, `${p.nickname} 님이 쓰러졌습니다.`);
+    finishDamage(state);
+    return null;
+  }
+  return "그렇게 버틸 수는 없습니다.";
+}
+
+function chooseStore(state, playerId, cardId) {
+  const store = state.store;
+  if (!store || store.pickerId !== playerId) return "지금은 고를 수 없습니다.";
+  const idx = store.cards.findIndex((c) => c.id === cardId);
+  if (idx < 0) return "그 카드는 깔려 있지 않습니다.";
+  const card = store.cards.splice(idx, 1)[0];
+  const p = player(state, playerId);
+  p.hand.push(card);
+  log(state, `${p.nickname} 님이 잡화점에서 ${cardLabel(card)}을(를) 가져갔습니다.`);
+  suzy(state, p);
+  if (!store.cards.length) {
+    state.store = null;
+    state.prompt = null;
+    enterPlay(state);
+    return null;
+  }
+  const order = store.order;
+  let start = order.indexOf(playerId);
+  for (let step = 1; step <= order.length; step += 1) {
+    const id = order[(start + step) % order.length];
+    if (player(state, id)?.alive) {
+      store.pickerId = id;
+      state.prompt = { kind: "store", playerId: id };
+      return null;
+    }
+  }
+  state.store = null;
+  state.prompt = null;
+  enterPlay(state);
+  return null;
+}
+
+function sidHeal(state, playerId, cardIds) {
+  const p = player(state, playerId);
+  if (!p || p.character !== "sid") return "시드 케첨만 쓸 수 있습니다.";
+  if (state.prompt && state.prompt.playerId !== playerId) return "다른 사람의 선택 중입니다.";
+  if (state.prompt && state.prompt.kind !== "save") return "지금은 그 능력을 쓸 수 없습니다.";
+  if (!state.prompt && (state.currentId !== playerId || state.turnPhase !== "play")) return "자신의 턴에만 회복할 수 있습니다.";
+  return applySid(state, p, cardIds, Boolean(state.prompt && state.prompt.kind === "save"));
+}
+
+function applySid(state, p, cardIds, fromSave) {
+  if (p.hp >= p.maxHp) return "이미 최대 생명력입니다.";
+  const unique = [...new Set(cardIds)];
+  if (unique.length !== 2) return "카드 두 장을 고르세요.";
+  const cards = [];
+  for (const id of unique) {
+    const idx = p.hand.findIndex((c) => c.id === id);
+    if (idx < 0) return "손에 없는 카드입니다.";
+    cards.push(p.hand.splice(idx, 1)[0]);
+  }
+  state.discard.push(...cards);
+  p.hp += 1;
+  log(state, `${p.nickname} 님이 카드 두 장을 버리고 생명력 1을 회복했습니다. (${p.hp}/${p.maxHp})`);
+  suzy(state, p);
+  if (fromSave) pumpDamage(state);
+  return null;
+}
+
+function startDefense(state, defenderId, sourceId, need, resume) {
+  const defender = player(state, defenderId);
+  state.combat = {
+    kind: state.combat?.kind || "bang",
+    sourceId,
+    defenderId,
+    missedNeed: need,
+    missedGot: 0,
+    checks: [],
+    resume,
+    queue: state.combat?.queue || null,
+  };
+  if (defender.character === "jourdonnais") state.combat.checks.push("jourdonnais");
+  if (defender.equipment.barrel) state.combat.checks.push("barrel");
+  state.turnPhase = "react";
+  runChecks(state);
+}
+
+function runChecks(state) {
+  if (state.phase === "end") return;
+  const combat = state.combat;
+  if (!combat) return;
+  if (combat.missedGot >= combat.missedNeed) {
+    defenseSuccess(state);
+    return;
+  }
+  if (!combat.checks.length) {
+    askMiss(state);
+    return;
+  }
+  const label = combat.checks.shift();
+  const defender = player(state, combat.defenderId);
+  if (defender.character === "lucky") {
+    const cards = drawUpTo(state, 2);
+    if (cards.length <= 1) {
+      resolveCheck(state, cards[0] || null, label);
+      return;
+    }
+    state.prompt = { kind: "lucky", playerId: defender.id, cards, mode: "combat", label };
+    log(state, `${defender.nickname} 님이 ${label === "jourdonnais" ? "주르도네" : "술통"} 드로우! 로 두 장을 뒤집었습니다.`);
+    return;
+  }
+  resolveCheck(state, drawOne(state), label);
+}
+
+function resolveCheck(state, card, label) {
+  if (card) state.discard.push(card);
+  const hearts = card && card.suit === "hearts";
+  const who = player(state, state.combat.defenderId);
+  log(state, `${who.nickname} 님의 ${label === "jourdonnais" ? "주르도네" : "술통"}: ${card ? cardLabel(card) : "카드 없음"} — ${hearts ? "막았습니다." : "실패."}`);
+  if (hearts) state.combat.missedGot += 1;
+  runChecks(state);
+}
+
+function askMiss(state) {
+  const combat = state.combat;
+  state.prompt = {
+    kind: "miss",
+    playerId: combat.defenderId,
+    need: combat.missedNeed,
+    got: combat.missedGot,
+    sourceId: combat.sourceId,
+  };
+}
+
+function defenseSuccess(state) {
+  const combat = state.combat;
+  const resume = combat?.resume || { type: "play" };
+  log(state, `${player(state, combat.defenderId).nickname} 님이 공격을 흘렸습니다.`);
+  state.combat = combat.queue ? { ...combat, defenderId: null, checks: [], missedGot: 0 } : null;
+  state.prompt = null;
+  continueResume(state, resume);
+}
+
+function nextIndians(state) {
+  if (state.phase === "end") return;
+  const combat = state.combat;
+  if (!combat || combat.kind !== "indians") {
+    backToPlay(state);
+    return;
+  }
+  while (combat.queue.length) {
+    const id = combat.queue.shift();
+    const p = player(state, id);
+    if (p?.alive) {
+      state.prompt = { kind: "discard-bang", playerId: id, reason: "indians", sourceId: combat.sourceId };
+      state.turnPhase = "react";
+      return;
+    }
+  }
+  state.combat = null;
+  state.prompt = null;
+  backToPlay(state);
+}
+
+function nextGatling(state) {
+  if (state.phase === "end") return;
+  const combat = state.combat;
+  if (!combat || combat.kind !== "gatling") {
+    backToPlay(state);
+    return;
+  }
+  while (combat.queue?.length) {
+    const id = combat.queue.shift();
+    const p = player(state, id);
+    if (p?.alive) {
+      startDefense(state, id, combat.sourceId, 1, { type: "nextGatling" });
+      return;
+    }
+  }
+  state.combat = null;
+  state.prompt = null;
+  backToPlay(state);
+}
+
+function continueResume(state, resume) {
+  if (state.phase === "end") return;
+  if (!resume || resume.type === "play") {
+    backToPlay(state);
+    return;
+  }
+  if (resume.type === "afterDynamite") {
+    afterDynamite(state);
+    return;
+  }
+  if (resume.type === "nextIndians") {
+    nextIndians(state);
+    return;
+  }
+  if (resume.type === "nextGatling") {
+    nextGatling(state);
+    return;
+  }
+  backToPlay(state);
+}
+
+function backToPlay(state) {
+  if (state.phase === "end") return;
+  const p = current(state);
+  if (!p || !p.alive) {
+    state.combat = null;
+    nextTurn(state);
+    return;
+  }
+  if (!state.combat || state.combat.kind !== "gatling" || !state.combat.queue?.length) state.combat = null;
+  state.turnPhase = "play";
+  state.prompt = null;
+  suzy(state, p);
+}
+
+function nextTurn(state) {
+  if (state.phase === "end") return;
+  state.prompt = null;
+  state.combat = null;
+  const start = state.currentId;
+  let id = start;
+  for (let i = 0; i < state.players.length; i += 1) {
+    id = clockwise(state, id)?.id;
+    if (!id) break;
+    const p = player(state, id);
+    if (p?.alive) {
+      startTurn(state, id);
+      return;
+    }
+  }
+}
+
+function inflict(state, targetId, amount, ctx) {
+  state.dmg = {
+    targetId,
+    amount,
+    lost: 0,
+    sourceId: ctx.sourceId || null,
+    elGringo: Boolean(ctx.elGringo),
+    resume: ctx.resume || { type: "play" },
+  };
+  pumpDamage(state);
+}
+
+function pumpDamage(state) {
+  const d = state.dmg;
+  if (!d) return;
+  const t = player(state, d.targetId);
+  if (!t || !t.alive) {
+    finishDamage(state);
+    return;
+  }
+  while (d.amount > 0 && t.hp > 1) {
+    t.hp -= 1;
+    d.amount -= 1;
+    d.lost += 1;
+    onLifeLost(state, t, d);
+  }
+  if (d.amount > 0 && t.hp <= 1) {
+    if (canSave(state, t)) {
+      state.prompt = { kind: "save", playerId: t.id, amount: d.amount, sourceId: d.sourceId };
+      state.turnPhase = "react";
+      log(state, `${t.nickname} 님이 치명상입니다. 맥주나 능력으로 버티거나 쓰러질 수 있습니다.`);
+      return;
+    }
+    d.lost += t.hp;
+    for (let i = 0; i < t.hp; i += 1) onLifeLost(state, t, d);
+    t.hp = 0;
+    d.amount = 0;
+  }
+  finishDamage(state);
+}
+
+function canSave(state, p) {
+  if (p.hp >= p.maxHp) return false;
+  if (p.character === "sid" && p.hand.length >= 2) return true;
+  if (alive(state).length > 2 && p.hand.some((c) => c.type === "beer")) return true;
+  return false;
+}
+
+function onLifeLost(state, target, d) {
+  if (target.character === "elgringo" && d.elGringo && d.sourceId && d.sourceId !== target.id) {
+    const src = player(state, d.sourceId);
+    if (src?.hand.length) {
+      const i = Math.floor(rand(state) * src.hand.length);
+      const card = src.hand.splice(i, 1)[0];
+      target.hand.push(card);
+      log(state, `${target.nickname} 님이 ${src.nickname} 님의 손패를 한 장 가져왔습니다.`);
+      suzy(state, src);
+    }
+  }
+}
+
+function finishDamage(state) {
+  const d = state.dmg;
+  if (!d) return;
+  const t = player(state, d.targetId);
+  state.dmg = null;
+  state.prompt = null;
+  if (t && t.hp > 0 && d.lost > 0) {
+    log(state, `${t.nickname} 님의 생명력 ${t.hp}/${t.maxHp}.`);
+    if (t.character === "bart") {
+      const got = drawUpTo(state, d.lost);
+      t.hand.push(...got);
+      if (got.length) log(state, `${t.nickname} 님이 잃은 생명만큼 카드를 ${got.length}장 뽑았습니다.`);
+    }
+  }
+  if (t && t.hp <= 0 && t.alive) eliminate(state, t, d.sourceId);
+  if (state.phase === "end") return;
+  continueResume(state, d.resume);
+}
+
+function eliminate(state, target, killerId) {
+  target.alive = false;
+  target.hp = 0;
+  const pile = [...target.hand, ...equipList(target).map((e) => e.card)];
+  target.hand = [];
+  target.equipment = emptyEquip();
+  const vulture = alive(state).find((p) => p.character === "vulture");
+  if (vulture && pile.length) {
+    vulture.hand.push(...pile);
+    log(state, `${target.nickname} 님이 탈락했습니다. 벌쳐 샘이 카드 ${pile.length}장을 가져갔습니다.`);
+    suzy(state, vulture);
+  } else {
+    if (pile.length) state.discard.push(...pile);
+    log(state, `${target.nickname} 님이 탈락했습니다.`);
+  }
+  const killer = killerId ? player(state, killerId) : null;
+  if (target.role === "outlaw" && killer && killer.alive && killer.id !== target.id) {
+    const got = drawUpTo(state, 3);
+    killer.hand.push(...got);
+    log(state, `무법자 처치 보상으로 ${killer.nickname} 님이 카드를 ${got.length}장 뽑았습니다.`);
+    suzy(state, killer);
+  }
+  if (target.role === "deputy" && killer && killer.role === "sheriff" && killer.alive) {
+    const dumped = [...killer.hand, ...equipList(killer).map((e) => e.card)];
+    killer.hand = [];
+    killer.equipment = emptyEquip();
+    if (dumped.length) state.discard.push(...dumped);
+    log(state, `보안관이 부관을 쓰러뜨려 가지고 있던 카드를 모두 버렸습니다.`);
+    suzy(state, killer);
+  }
+  checkWin(state);
+}
+
+function checkWin(state) {
+  const living = alive(state);
+  const sheriff = state.players.find((p) => p.role === "sheriff");
+  if (!sheriff?.alive) {
+    if (living.length === 1 && living[0].role === "renegade") {
+      state.winner = { team: "renegade", playerId: living[0].id };
+      log(state, `배신자 ${living[0].nickname} 님의 승리입니다. 마지막까지 살아남았습니다.`);
+    } else {
+      state.winner = { team: "outlaw" };
+      log(state, "무법자의 승리입니다. 보안관이 쓰러졌습니다.");
+    }
+    endMatch(state);
+    return;
+  }
+  if (!living.some((p) => p.role === "outlaw" || p.role === "renegade")) {
+    state.winner = { team: "sheriff", playerId: sheriff.id };
+    log(state, "보안관 팀의 승리입니다. 무법자와 배신자를 모두 쓰러뜨렸습니다.");
+    endMatch(state);
+  }
+}
+
+function endMatch(state) {
+  state.phase = "end";
+  state.prompt = null;
+  state.combat = null;
+  state.store = null;
+  state.dmg = null;
+  state.turnPhase = null;
+}
+
+function suzy(state, p) {
+  if (!p || !p.alive || p.character !== "suzy") return;
+  if (p.hand.length > 0) return;
+  const card = drawOne(state);
+  if (!card) return;
+  p.hand.push(card);
+  log(state, `${p.nickname} 님의 손패가 비어 카드를 1장 뽑았습니다.`);
+}
+
+function drawOne(state) {
+  if (!state.deck.length) reshuffle(state);
+  if (!state.deck.length) return null;
+  return state.deck.pop();
+}
+
+function drawUpTo(state, n) {
+  const cards = [];
+  for (let i = 0; i < n; i += 1) {
+    const c = drawOne(state);
+    if (!c) break;
+    cards.push(c);
+  }
+  return cards;
+}
+
+function reshuffle(state) {
+  if (!state.discard.length) return;
+  state.deck = shuffle(state, state.discard);
+  state.discard = [];
+  log(state, "버린 카드를 다시 섞어 덱을 만들었습니다.");
+}
+
+function alive(state) {
+  return state.players.filter((p) => p.alive).sort((a, b) => a.seat - b.seat);
+}
+
+function clockwise(state, id) {
+  const list = state.players.slice().sort((a, b) => a.seat - b.seat);
+  const i = list.findIndex((p) => p.id === id);
+  if (i < 0) return null;
+  for (let step = 1; step <= list.length; step += 1) {
+    const p = list[(i + step) % list.length];
+    if (p.alive) return p;
+  }
+  return null;
+}
+
+function othersClockwise(state, id) {
+  const list = [];
+  let cursor = id;
+  for (let i = 0; i < state.players.length; i += 1) {
+    const next = clockwise(state, cursor);
+    if (!next || next.id === id) break;
+    list.push(next.id);
+    cursor = next.id;
+  }
+  return list;
+}
+
+function distance(state, from, to) {
+  if (!from || !to || from.id === to.id) return 0;
+  const list = alive(state);
+  const i = list.findIndex((p) => p.id === from.id);
+  const j = list.findIndex((p) => p.id === to.id);
+  if (i < 0 || j < 0) return 99;
+  const n = list.length;
+  let d = Math.min((j - i + n) % n, (i - j + n) % n);
+  if (to.equipment.mustang) d += 1;
+  if (to.character === "paul") d += 1;
+  if (from.equipment.scope) d -= 1;
+  if (from.character === "rose") d -= 1;
+  return Math.max(1, d);
+}
+
+function weaponRange(p) {
+  return p.equipment.weapon ? (CARD_INFO[p.equipment.weapon.type].range || 1) : 1;
+}
+
+function player(state, id) {
+  return state.players.find((p) => p.id === id) || null;
+}
+
+function current(state) {
+  return player(state, state.currentId);
+}
+
+function emptyEquip() {
+  return { weapon: null, mustang: null, scope: null, barrel: null, jail: null, dynamite: null };
+}
+
+function equipList(p) {
+  const eq = p.equipment || emptyEquip();
+  const out = [];
+  if (eq.weapon) out.push({ slot: "weapon", card: eq.weapon });
+  for (const slot of ["barrel", "mustang", "scope", "jail", "dynamite"]) {
+    if (eq[slot]) out.push({ slot, card: eq[slot] });
+  }
+  return out;
+}
+
+function pullEquip(p, cardId) {
+  const eq = p.equipment;
+  for (const slot of ["weapon", "mustang", "scope", "barrel", "jail", "dynamite"]) {
+    if (eq[slot] && eq[slot].id === cardId) {
+      const card = eq[slot];
+      eq[slot] = null;
+      return card;
+    }
+  }
+  return null;
+}
+
+function mint(state, type, suit, rank) {
+  const id = `c${state.nextCard}`;
+  state.nextCard += 1;
+  return { id, type, suit, rank };
+}
+
+function rand(state) {
+  state.seed |= 0;
+  state.seed = (state.seed + 0x6D2B79F5) | 0;
+  let t = Math.imul(state.seed ^ (state.seed >>> 15), 1 | state.seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+function shuffle(state, list) {
+  const arr = list.slice();
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand(state) * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function log(state, text) {
+  state.log.push({ id: `l${state.log.length}-${state.seq}`, text, t: Date.now() });
+  if (state.log.length > 80) state.log.shift();
+}
+
+function cleanName(name) {
+  const t = String(name || "").replace(/\s+/g, " ").trim().slice(0, 12);
+  return t || "무명";
+}
+
+export function projectView(state, viewerId) {
+  const reveal = state.phase === "end";
+  const you = player(state, viewerId);
+  const prompt = projectPrompt(state, viewerId);
+  return {
+    seq: state.seq || 0,
+    phase: state.phase,
+    hostId: state.hostId,
+    yourId: viewerId,
+    yourName: you?.nickname || "",
+    currentId: state.currentId,
+    turnPhase: state.turnPhase,
+    winner: state.winner,
+    deckCount: state.deck.length,
+    discardCount: state.discard.length,
+    discardTop: state.discard.length ? state.discard[state.discard.length - 1] : null,
+    log: state.log.slice(-50),
+    chat: state.chat.slice(-40),
+    prompt,
+    store: state.store ? { cards: state.store.cards.map(publicCard), pickerId: state.store.pickerId } : null,
+    bangsPlayed: state.bangsPlayed,
+    players: state.players.map((p) => projectPlayer(state, p, viewerId, reveal)),
+    handInfo: you && state.phase === "play" && state.currentId === viewerId && state.turnPhase === "play" && !state.prompt
+      ? handInfo(state, you)
+      : [],
+  };
+}
+
+function projectPlayer(state, p, viewerId, reveal) {
+  const self = p.id === viewerId;
+  return {
+    id: p.id,
+    nickname: p.nickname,
+    seat: p.seat,
+    connected: p.connected !== false,
+    alive: p.alive !== false,
+    character: p.character,
+    hp: p.hp,
+    maxHp: p.maxHp,
+    handCount: p.hand?.length || 0,
+    hand: self ? (p.hand || []).map(publicCard) : undefined,
+    equipment: {
+      weapon: p.equipment?.weapon ? publicCard(p.equipment.weapon) : null,
+      mustang: p.equipment?.mustang ? publicCard(p.equipment.mustang) : null,
+      scope: p.equipment?.scope ? publicCard(p.equipment.scope) : null,
+      barrel: p.equipment?.barrel ? publicCard(p.equipment.barrel) : null,
+      jail: p.equipment?.jail ? publicCard(p.equipment.jail) : null,
+      dynamite: p.equipment?.dynamite ? publicCard(p.equipment.dynamite) : null,
+    },
+    role: reveal || p.role === "sheriff" || self ? p.role : null,
+    choices: state.phase === "select" && self ? p.choices : null,
+    isHost: p.id === state.hostId,
+    distance: self || !p.alive || state.phase !== "play" ? null : distanceFromYou(state, viewerId, p.id),
+  };
+}
+
+function distanceFromYou(state, viewerId, otherId) {
+  const you = player(state, viewerId);
+  const other = player(state, otherId);
+  if (!you?.alive || !other?.alive) return null;
+  return distance(state, you, other);
+}
+
+function publicCard(card) {
+  return { id: card.id, type: card.type, suit: card.suit, rank: card.rank };
+}
+
+function projectPrompt(state, viewerId) {
+  const prompt = state.prompt;
+  if (!prompt) return null;
+  const mine = prompt.playerId === viewerId;
+  const base = { kind: prompt.kind, playerId: prompt.playerId, mine };
+  if (!mine && prompt.kind === "kit") return base;
+  if (prompt.kind === "lucky") return { ...base, cards: prompt.cards.map(publicCard), mode: prompt.mode };
+  if (prompt.kind === "kit") return { ...base, cards: prompt.cards.map(publicCard) };
+  if (prompt.kind === "pedro") return { ...base, top: prompt.top ? publicCard(prompt.top) : null };
+  if (prompt.kind === "jesse") return { ...base, options: prompt.options };
+  if (prompt.kind === "miss") return { ...base, need: prompt.need, got: prompt.got, sourceId: prompt.sourceId };
+  if (prompt.kind === "discard-bang") return { ...base, reason: prompt.reason, sourceId: prompt.sourceId };
+  if (prompt.kind === "discard") return { ...base, count: prompt.count };
+  if (prompt.kind === "save") return { ...base, amount: prompt.amount };
+  if (prompt.kind === "store") return base;
+  return base;
+}
+
+function handInfo(state, p) {
+  return p.hand.map((card) => describePlay(state, p, card));
+}
+
+function describePlay(state, p, card) {
+  const type = effectiveType(p, card, "play");
+  if (type === "missed") return { cardId: card.id, ok: false, reason: "빗나감!은 막을 때만 냅니다.", targets: [] };
+  if (type === "bang") {
+    if (!unlimitedBang(p) && state.bangsPlayed >= 1) {
+      return { cardId: card.id, ok: false, reason: "이번 턴의 뱅!을 이미 썼습니다.", targets: [] };
+    }
+    const targets = alive(state)
+      .filter((t) => t.id !== p.id && distance(state, p, t) <= weaponRange(p))
+      .map((t) => ({ id: t.id }));
+    if (!targets.length) return { cardId: card.id, ok: false, reason: "사정거리 안에 아무도 없습니다.", targets: [] };
+    return { cardId: card.id, ok: true, reason: "", targets, needsTarget: true };
+  }
+  if (WEAPONS.has(type) || (SELF_BLUE.includes(type) && type !== "dynamite")) {
+    if (SELF_BLUE.includes(type) && p.equipment[type]) {
+      return { cardId: card.id, ok: false, reason: "이미 같은 카드가 앞에 있습니다.", targets: [] };
+    }
+    return { cardId: card.id, ok: true, reason: "", targets: [], needsTarget: false };
+  }
+  if (type === "dynamite") {
+    if (p.equipment.dynamite) return { cardId: card.id, ok: false, reason: "이미 다이너마이트가 있습니다.", targets: [] };
+    return { cardId: card.id, ok: true, reason: "", targets: [], needsTarget: false };
+  }
+  if (type === "jail") {
+    const targets = alive(state)
+      .filter((t) => t.role !== "sheriff" && !t.equipment.jail)
+      .map((t) => ({ id: t.id }));
+    if (!targets.length) return { cardId: card.id, ok: false, reason: "감옥에 넣을 수 있는 사람이 없습니다.", targets: [] };
+    return { cardId: card.id, ok: true, reason: "", targets, needsTarget: true };
+  }
+  if (type === "duel") {
+    const targets = alive(state).filter((t) => t.id !== p.id).map((t) => ({ id: t.id }));
+    return { cardId: card.id, ok: targets.length > 0, reason: "", targets, needsTarget: true };
+  }
+  if (type === "panic") {
+    const targets = [];
+    for (const t of alive(state)) {
+      const equips = equipList(t).map((e) => e.card.id);
+      if (t.id === p.id) {
+        if (equips.length) targets.push({ id: t.id, takes: equips });
+        continue;
+      }
+      if (distance(state, p, t) > 1) continue;
+      const takes = [];
+      if (t.hand.length) takes.push("hand");
+      takes.push(...equips);
+      if (takes.length) targets.push({ id: t.id, takes });
+    }
+    if (!targets.length) return { cardId: card.id, ok: false, reason: "거리 1 안에 빼앗을 카드가 없습니다.", targets: [] };
+    return { cardId: card.id, ok: true, reason: "", targets, needsTarget: true, needsTake: true };
+  }
+  if (type === "catbalou") {
+    const targets = alive(state).map((t) => {
+      const takes = [];
+      if (t.hand.length) takes.push("hand");
+      takes.push(...equipList(t).map((e) => e.card.id));
+      return { id: t.id, takes };
+    });
+    return { cardId: card.id, ok: true, reason: "", targets, needsTarget: true, needsTake: true };
+  }
+  return { cardId: card.id, ok: true, reason: "", targets: [], needsTarget: false };
+}
+
+export function autoChoice(state, playerId) {
+  const p = player(state, playerId);
+  if (!p) return null;
+  if (state.phase === "select" && p.choices?.length) return { type: "choose", characterId: p.choices[0] };
+  const prompt = state.prompt;
+  if (!prompt || prompt.playerId !== playerId) {
+    if (state.phase === "play" && state.currentId === playerId && state.turnPhase === "play") return { type: "end" };
+    return null;
+  }
+  if (prompt.kind === "discard") {
+    return { type: "discard", cardIds: p.hand.slice(0, prompt.count).map((c) => c.id) };
+  }
+  if (prompt.kind === "save") return { type: "respond", choice: "accept" };
+  if (prompt.kind === "miss" || prompt.kind === "discard-bang") {
+    return { type: "respond", choice: "take" };
+  }
+  if (prompt.kind === "jesse" || prompt.kind === "pedro") return { type: "respond", mode: "deck" };
+  if (prompt.kind === "kit" || prompt.kind === "lucky") return { type: "respond", cardId: prompt.cards[0].id };
+  if (prompt.kind === "store") return { type: "respond", cardId: state.store.cards[0].id };
+  return { type: "end" };
+}
+
+export { cardLabel, distance, ROLES, characterById, CARD_INFO };
