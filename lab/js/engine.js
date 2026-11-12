@@ -9,8 +9,8 @@ import {
   cardLabel,
   characterById,
   rolesForCount,
-} from "./cards.js?v=12";
-import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=12";
+} from "./cards.js?v=13";
+import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=13";
 
 const WEAPONS = new Set(WEAPON_TYPES);
 
@@ -1406,9 +1406,13 @@ function particle(word, choices) {
 }
 
 function naturalKorean(text) {
-  return String(text).replace(/([^\s]+?)(을\(를\)|이\(가\)|은\(는\)|과\(와\)|으로\(로\))/g,
-    (_, word, pair) => word + particle(word, pair));
+  return String(text)
+    .replace(/([^\s]+?)\(으\)로/g, (_, word) => word + particle(word, "으로(로)"))
+    .replace(/([^\s]+?)(을\(를\)|이\(가\)|은\(는\)|과\(와\)|으로\(로\))/g,
+      (_, word, pair) => word + particle(word, pair));
 }
+
+export { naturalKorean };
 
 function log(state, text) {
   state.log.push({ id: `l${state.log.length}-${state.seq}`, text: naturalKorean(text), t: Date.now() });

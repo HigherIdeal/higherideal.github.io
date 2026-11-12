@@ -99,7 +99,7 @@ function newSlug() {
   return `p${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function openRelay({ namespace, onBox, onLeave, onStatus }) {
+export function openRelay({ namespace, onBox, onLeave, onJoin, onStatus }) {
   const relays = [
     { name: "open-rooms", url: `wss://relay.open-rooms.dev/rooms/${namespace}` },
     { name: "itty", url: `wss://itty.ws/c/${namespace}` },
@@ -111,6 +111,8 @@ export function openRelay({ namespace, onBox, onLeave, onStatus }) {
   let stopped = false;
   let opened = false;
   let active = relays[0].name;
+  let backoff = 400;
+  let keep = 0;
 
   function status(phase) {
     onStatus?.({ phase, relay: active });
@@ -118,14 +120,17 @@ export function openRelay({ namespace, onBox, onLeave, onStatus }) {
 
   function failOver() {
     opened = false;
+    clearInterval(keep);
     index += 1;
     active = relays[index % relays.length].name;
     status("fail");
-    setTimeout(start, 500);
+    const wait = backoff;
+    backoff = Math.min(4000, backoff * 2);
+    setTimeout(start, wait);
   }
 
   function start() {
-    if (stopped) return;
+    if (stopped || opened) return;
     const spec = relays[index % relays.length];
     active = spec.name;
     const token = ++attempt;
@@ -147,9 +152,14 @@ export function openRelay({ namespace, onBox, onLeave, onStatus }) {
       if (token !== attempt) return;
       clearTimeout(timer);
       opened = true;
+      backoff = 400;
       if (spec.name === "open-rooms") sock.send(JSON.stringify({ type: "hello", slug }));
       globalThis.__BANG_RELAY = spec.name;
       status("open");
+      keep = setInterval(() => {
+        if (token !== attempt || sock.readyState !== WebSocket.OPEN) return;
+        try { sock.send(spec.name === "open-rooms" ? "ping" : JSON.stringify({ type: "keepalive" })); } catch { /* retry on close */ }
+      }, 8000);
     };
     sock.onmessage = (event) => {
       if (token !== attempt) return;
@@ -160,11 +170,14 @@ export function openRelay({ namespace, onBox, onLeave, onStatus }) {
       if (token !== attempt || stopped) return;
       clearTimeout(timer);
       if (event?.code === 4004) slug = newSlug();
+      clearInterval(keep);
       if (!opened) failOver();
       else {
         opened = false;
         status("retry");
-        setTimeout(start, 700);
+        const wait = backoff;
+        backoff = Math.min(4000, backoff * 2);
+        setTimeout(start, wait);
       }
     };
   }
@@ -173,6 +186,11 @@ export function openRelay({ namespace, onBox, onLeave, onStatus }) {
     let data;
     try { data = JSON.parse(raw); } catch { return; }
     if (kind === "open-rooms") {
+      if (data.type === "peer:join" || data.type === "peer:update") {
+        const peer = data.peer || data;
+        if (peer.slug) onJoin?.(peer.slug);
+        return;
+      }
       if (data.type === "peer:leave") {
         const peer = data.peer || data;
         if (peer.slug) onLeave?.(peer.slug);
@@ -215,6 +233,11 @@ export function openRelay({ namespace, onBox, onLeave, onStatus }) {
     send,
     slug: () => slug,
     relay: () => active,
+    isOpen: () => opened && socket?.readyState === WebSocket.OPEN,
+    ensure() {
+      if (stopped || opened) return;
+      start();
+    },
     stop() {
       stopped = true;
       attempt += 1;

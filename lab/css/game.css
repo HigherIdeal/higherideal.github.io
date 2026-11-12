@@ -364,6 +364,26 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .victory ul { list-style: none; padding: 0; margin: 0 0 10px; }
 .help { border: 1px solid var(--line); border-radius: 2px; padding: 16px; max-width: 460px; color: var(--ink); background: var(--panel); }
 .help::backdrop { background: rgba(90, 70, 40, 0.28); }
+#table-gl { position: absolute; inset: 0; width: 100%; height: calc(100% - 150px); z-index: 1; display: block; pointer-events: none; }
+.board.is-webgl { background: #000; }
+.board.is-webgl .seat { position: absolute; z-index: 2; }
+.board.is-webgl .mine { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; }
+.board.is-webgl.is-aiming #table-gl { pointer-events: auto; z-index: 5; }
+.board.is-webgl .seat .card,
+.board.is-webgl .self-tray .card,
+.board.is-webgl .center-piles { opacity: 0; pointer-events: none; }
+.table-screen { background: #000; }
+.table-wrap { background: #000; }
+.table-screen .topbar { background: transparent; border-bottom: 0; }
+.table-screen .brand-mini, .table-screen .topbar p, .table-screen .log, .table-screen .chat { color: #f4ead8; }
+.table-screen .dock { background: #110e0c; border-left: 0; }
+#hand-fan { position: fixed; inset: 0; z-index: 82; background: rgba(0, 0, 0, 0.46); }
+#hand-fan[hidden] { display: none; }
+.fan-card { position: fixed; width: clamp(120px, 34vw, 180px); border: 0; background: none; padding: 0; transition: transform .08s linear; }
+.fan-card .card { width: 100%; }
+.fan-card.is-focus { z-index: 3; }
+.fan-actions { position: fixed; left: 0; right: 0; bottom: 24px; display: flex; gap: 8px; justify-content: center; }
+.table-screen .life { color: #f4ead8; font-size: 12px; font-weight: 700; text-shadow: 0 1px 2px #000; }
 #zoom-layer {
   position: fixed; inset: 0; z-index: 80;
   background: rgba(58, 42, 26, 0.46);
@@ -404,7 +424,7 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 }
 
 @media (max-width: 800px) {
-  .table-screen { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(140px, 28dvh); height: 100dvh; max-height: 100dvh; }
+  .table-screen { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(88px, 16dvh); height: 100dvh; max-height: 100dvh; }
   .dock { border-left: 0; border-top: 1px solid var(--line); }
   .board { gap: 4px 6px; padding: 6px; }
   .seat { max-width: 86px; }

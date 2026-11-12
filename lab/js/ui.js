@@ -1,5 +1,7 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=12";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=12";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=13";
+import { naturalKorean } from "./engine.js?v=13";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=13";
+import { mountTable } from "./table3d.js?v=13";
 
 const ui = {
   selected: null,
@@ -62,9 +64,11 @@ export function mount(app, ctx) {
     app.addEventListener("click", (event) => onClick(event, app));
     app.addEventListener("submit", (event) => onSubmit(event, app));
     wireSpread();
+    wireFan();
   }
   app.__ctx = ctx;
   renderSpread(ctx);
+  syncTable(app, view);
   applyEffects(app, previousView, view, previousFrame);
 }
 
@@ -162,12 +166,12 @@ function selectHtml(ctx) {
         <img src="${ROLES[me.role].image}" alt="${esc(ROLES[me.role].ko)}" />
         <div><strong>${esc(ROLES[me.role].ko)}</strong><p>${esc(ROLES[me.role].goal)}</p></div>
       </div>` : ""}
-      ${me?.character ? `<p class="chosen-note">${esc(characterById(me.character).name)}(으)로 앉았습니다. 다른 사람을 기다리는 중.</p>` : `
+      ${me?.character ? `<p class="chosen-note">${esc(naturalKorean(`${characterById(me.character).name}(으)로 앉았습니다.`))} 다른 사람을 기다리는 중.</p>` : `
         <div class="choice-row">
           ${choices.map((ch) => `<button type="button" class="choice" data-char="${esc(ch.id)}">
             <span class="card"><img src="${ch.image}" alt="${esc(ch.name)}" draggable="false" /></span>
             <strong>${esc(ch.name)}</strong>
-            <em>생명 ${ch.hp}${me?.role === "sheriff" ? " + 1" : ""}</em>
+            <em>생명 ${ch.hp + (me?.role === "sheriff" ? 1 : 0)}</em>
             <p>${esc(ch.ability)}</p>
           </button>`).join("")}
         </div>`}
@@ -281,7 +285,7 @@ function seatHtml(p, view) {
     <p class="who">
       <strong>${esc(p.nickname)}</strong>
       ${presenceHtml(p)}
-      <span class="bullets" aria-label="생명 ${p.hp}">${bullets(p.hp, p.maxHp)}</span>
+      <span class="life" data-hp="${p.hp}" data-max-hp="${p.maxHp}">${p.hp}/${p.maxHp}</span>
       <span class="hand-count" title="손패" aria-label="손패 ${p.handCount}장">${p.handCount}</span>
     </p>
   </article>`;
@@ -333,7 +337,7 @@ function selfTray(p, view) {
     <p class="who">
       <strong>${esc(p.nickname)}</strong>
       ${presenceHtml(p)}
-      <span class="bullets" aria-label="생명 ${p.hp}">${bullets(p.hp, p.maxHp)}</span>
+      <span class="life" data-hp="${p.hp}" data-max-hp="${p.maxHp}">${p.hp}/${p.maxHp}</span>
     </p>
   </div>`;
 }
@@ -629,13 +633,7 @@ function onClick(event, app) {
   }
   const stack = event.target.closest(".stack");
   if (stack) {
-    if (stack.dataset.hand) {
-      const card = event.target.closest("[data-hand-card]")?.closest(".card");
-      ui.spread = { kind: "hand" };
-      ui.spreadPick = card?.dataset.cardId || null;
-      renderSpread(ctx);
-      return;
-    }
+    if (stack.dataset.hand) return;
     const stackId = stack.dataset.stackId || "";
     const playerId = stackId === "self" ? view?.yourId : (stackId.startsWith("seat-") ? stackId.slice(5) : "");
     if (playerId) {
@@ -905,3 +903,133 @@ function renderSpread(ctx) {
   const scroller = layer.querySelector(".spread-scroller");
   if (scroller && !opening && oldKind === ui.spread.kind) scroller.scrollLeft = oldScrollLeft;
 }
+
+function syncTable(app, view) {
+  const board = app.querySelector(".board");
+  if (!board || !view || (view.phase !== "play" && view.phase !== "end")) return;
+  let canvas = board.querySelector("#table-gl");
+  if (!canvas) {
+    canvas = document.createElement("canvas");
+    canvas.id = "table-gl";
+    board.prepend(canvas);
+    canvas.addEventListener("pointerdown", (event) => {
+      const ctx = app.__ctx;
+      if (!ui.gl || !ctx?.view || !ui.selected) return;
+      const id = ui.gl.pick(event.clientX, event.clientY);
+      if (id && isTarget(ctx.view, id)) playAt(ctx, ui.selected, id);
+    });
+  }
+  if (!ui.gl) {
+    ui.gl = mountTable(canvas);
+    if (ui.gl) board.classList.add("is-webgl");
+  }
+  if (!ui.gl) return;
+  board.classList.toggle("is-aiming", Boolean(ui.selected));
+  const legal = ui.selected ? view.players.filter((p) => isTarget(view, p.id)).map((p) => p.id) : [];
+  ui.gl.update(view, legal);
+}
+
+function wireFan() {
+  const app = document.querySelector("#app");
+  app.addEventListener("pointerdown", (event) => {
+    if (event.button > 0 || ui.fan) return;
+    const hand = event.target.closest(".stack.hand");
+    if (!hand) return;
+    const ctx = app.__ctx;
+    const me = ctx?.view?.players?.find((p) => p.id === ctx.view.yourId);
+    const cards = me?.hand || [];
+    if (!cards.length) return;
+    event.preventDefault();
+    ui.fan = {
+      id: event.pointerId,
+      originX: event.clientX,
+      originY: event.clientY,
+      lastY: event.clientY,
+      drag: 0,
+      target: 0,
+      holding: true,
+      cards,
+      focus: 0,
+    };
+    try { hand.setPointerCapture(event.pointerId); } catch { /* pointer still reaches window */ }
+    ensureFan().hidden = false;
+    fanFrame();
+  });
+  window.addEventListener("pointermove", (event) => {
+    const fan = ui.fan;
+    if (!fan?.holding || event.pointerId !== fan.id) return;
+    fan.target = (event.clientX - fan.originX) / 74;
+    fan.lastY = event.clientY;
+  });
+  window.addEventListener("pointerup", finishFan);
+  window.addEventListener("pointercancel", finishFan);
+}
+
+function ensureFan() {
+  let layer = document.querySelector("#hand-fan");
+  if (layer) return layer;
+  layer = document.createElement("div");
+  layer.id = "hand-fan";
+  layer.hidden = true;
+  document.body.appendChild(layer);
+  layer.addEventListener("click", (event) => {
+    if (event.target.id === "hand-fan") closeFan();
+    const act = event.target.closest("[data-spread-act]");
+    const ctx = document.querySelector("#app")?.__ctx;
+    if (act && ctx) runSpreadAction(ctx, act.dataset.spreadAct);
+  });
+  return layer;
+}
+
+function fanFrame() {
+  const fan = ui.fan;
+  const layer = ensureFan();
+  if (!fan) return;
+  fan.drag += (fan.target - fan.drag) * 0.3;
+  const focus = Math.max(0, Math.min(fan.cards.length - 1, Math.round(-fan.drag)));
+  fan.focus = focus;
+  ui.spreadPick = fan.cards[focus]?.id || null;
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const ctx = document.querySelector("#app")?.__ctx;
+  layer.hidden = false;
+  layer.innerHTML = `<div class="fan-stage">${fan.cards.map((card, index) => {
+    const offset = index + fan.drag;
+    const centered = index === focus;
+    const x = width / 2 + (offset - (fan.cards.length - 1) / 2) * Math.min(92, width / 5.5);
+    const y = height - (centered ? 280 : 210) + Math.abs(index - focus) * 14;
+    return `<button type="button" class="fan-card${centered ? " is-focus" : ""}" data-card-id="${esc(card.id)}" style="left:${x}px;top:${y}px;transform:translate(-50%,0) scale(${centered ? 1.22 : 0.8})">${cardArt(card).replace(/^<button/, "<span").replace(/<\/button>$/, "</span>")}</button>`;
+  }).join("")}${fan.holding || !ctx ? "" : `<div class="fan-actions">${spreadHandActions(ctx, ui.spreadPick)}</div>`}</div>`;
+  if (fan.holding || Math.abs(fan.target - fan.drag) > 0.03) requestAnimationFrame(fanFrame);
+}
+
+function finishFan(event) {
+  const fan = ui.fan;
+  if (!fan?.holding || event.pointerId !== fan.id) return;
+  const rise = fan.originY - event.clientY;
+  const card = fan.cards[fan.focus];
+  fan.holding = false;
+  const ctx = document.querySelector("#app")?.__ctx;
+  if (rise > 76 && card && ctx) {
+    ui.spreadPick = card.id;
+    const act = spreadHandActions(ctx, card.id).match(/data-spread-act="([^"]+)"/);
+    closeFan();
+    if (act) runSpreadAction(ctx, act[1]);
+    return;
+  }
+  if (event.clientY - fan.originY > 72) {
+    closeFan();
+    return;
+  }
+  fanFrame();
+}
+
+function closeFan() {
+  ui.fan = null;
+  const layer = document.querySelector("#hand-fan");
+  if (layer) {
+    layer.hidden = true;
+    layer.innerHTML = "";
+  }
+}
+

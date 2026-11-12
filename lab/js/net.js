@@ -1,9 +1,10 @@
-import { ENTRY_CODE, ROOM_ID } from "./config.js?v=12";
-import { addPlayer, autoChoice, createLobby, dispatch, expireDisconnects, markDisconnect, projectView } from "./engine.js?v=12";
-import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=12";
+import { ENTRY_CODE, ROOM_ID } from "./config.js?v=13";
+import { addPlayer, autoChoice, createLobby, dispatch, expireDisconnects, markDisconnect, projectView } from "./engine.js?v=13";
+import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=13";
 
-const HOST_LOST_MS = 12000;
-const STALE_MS = 25000;
+const HOST_LOST_MS = 20000;
+const STALE_MS = 45000;
+const LISTEN_MS = 4000;
 
 function newId() {
   return crypto.randomUUID();
@@ -29,6 +30,8 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   let lastBeat = 0;
   let electTimer = 0;
   let ready = false;
+  let openedAt = 0;
+  let socketOpen = false;
   const connToken = newId();
   const helloAt = Date.now();
   const wasHost = sessionStorage.getItem("bang-role") === "host";
@@ -161,6 +164,15 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
 
   function becomeHost(reclaim) {
     if (destroyed || steppedAside || isHost) return;
+    if (!socketOpen) {
+      report("error", "재연결 중…");
+      return;
+    }
+    if (!openedAt || Date.now() - openedAt < LISTEN_MS) {
+      report("search", "연결 중…");
+      scheduleElect(Math.max(200, LISTEN_MS - (Date.now() - (openedAt || Date.now()))));
+      return;
+    }
     if (reclaim && freshForeignBeat()) return;
     if (!reclaim && electionWinner() !== playerId) return;
     isHost = true;
@@ -188,6 +200,16 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     }
     beat();
     broadcast();
+  }
+
+  function pushViews() {
+    if (!isHost || !state) return;
+    for (const p of state.players) {
+      if (p.id === playerId) continue;
+      const info = directory.get(p.id);
+      if (!info?.pub) continue;
+      direct(p.id, { kind: "state", to: p.id, view: projectView(state, p.id) }, info.pub, info.slug);
+    }
   }
 
   function scheduleElect(ms) {
@@ -233,7 +255,9 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       if (who && who.connected === false) {
         who.connected = true;
         delete who.disconnectedAt;
-        broadcast();
+      }
+      if (who && info?.pub) {
+        direct(msg.from, { kind: "state", to: msg.from, view: projectView(state, msg.from) }, info.pub, info.slug);
       }
       return;
     }
@@ -327,7 +351,7 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
         slug: prev.slug || "",
         token: prev.token || "",
         at: prev.at || 0,
-        seen: prev.seen || Date.now(),
+        seen: Date.now(),
         nickname: prev.nickname || "",
         hasState: Boolean(prev.hasState),
       });
@@ -344,28 +368,17 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   }
 
   function onLeave(slug) {
-    if (!isHost || !slug) return;
-    for (const [id, info] of directory) {
-      if (info.slug === slug) apply(id, { type: "disconnect" });
+    if (!slug) return;
+    for (const info of directory.values()) {
+      if (info.slug === slug) info.relayLeft = Date.now();
     }
   }
 
   const heartbeat = setInterval(() => {
     if (destroyed || steppedAside || !ready) return;
     if (!isHost) {
-      if (!seqSeen) announce();
-      else {
-        publish({
-          kind: "ping",
-          from: playerId,
-          token: connToken,
-          at: helloAt,
-          pub,
-          slug: relay?.slug() || "",
-          hasState: Boolean(readSnap()),
-        });
-      }
-      if (lastBeat && Date.now() - lastBeat > HOST_LOST_MS) {
+      announce();
+      if (lastBeat && Date.now() - lastBeat > HOST_LOST_MS && !document.hidden) {
         lastBeat = 0;
         hostPeer = "";
         report("error", "방장 연결이 끊겼습니다. 다시 찾는 중…");
@@ -374,13 +387,22 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       return;
     }
     beat();
-    if (!state) return;
+    pushViews();
+    if (!state || document.hidden) return;
     const now = Date.now();
     let changed = expireDisconnects(state, now);
     for (const p of state.players) {
       if (p.id === playerId) continue;
       const info = directory.get(p.id);
-      if (p.connected !== false && info && now - info.seen > STALE_MS) {
+      if (info && now - info.seen <= STALE_MS && p.connected === false) {
+        p.connected = true;
+        delete p.disconnectedAt;
+        changed = true;
+      }
+      const quietFor = info ? now - info.seen : 0;
+      const noTraffic = info && quietFor > STALE_MS;
+      const relayGone = info?.relayLeft && quietFor > 10000;
+      if (!document.hidden && p.connected !== false && (noTraffic || relayGone)) {
         markDisconnect(state, p.id, now);
         changed = true;
       }
@@ -423,22 +445,43 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       namespace,
       onBox,
       onLeave,
+      onJoin(slug) {
+        for (const info of directory.values()) {
+          if (info.slug === slug) {
+            info.seen = Date.now();
+            info.relayLeft = 0;
+          }
+        }
+      },
       onStatus({ phase, relay: name }) {
         if (steppedAside) return;
         if (phase === "open") {
           ready = true;
+          socketOpen = true;
+          openedAt = Date.now();
           announce();
-          if (wasHost && readSnap()?.hostId === playerId) scheduleElect(600);
-          else scheduleElect(3500);
+          scheduleElect(LISTEN_MS);
+          report("search", "연결 중…");
           return;
         }
         ready = false;
-        if (phase === "fail") report("error", "중계에 연결하지 못했습니다. 다른 중계로 다시 시도합니다.");
+        socketOpen = false;
+        if (isHost) isHost = false;
+        if (phase === "fail") report("error", "재연결 중…");
+        else if (phase === "retry") report("error", "재연결 중…");
         else if (name === "itty") report("error", "다른 중계로 다시 시도합니다.");
-        else report("search", "중계에 연결하는 중…");
+        else report("search", "연결 중…");
       },
     });
     relay.start();
+    document.addEventListener("visibilitychange", () => {
+      if (steppedAside || document.visibilityState !== "visible") return;
+      if (relay.isOpen()) announce();
+      else {
+        report("error", "재연결 중…");
+        relay.ensure();
+      }
+    });
   })();
 
   return {
