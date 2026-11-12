@@ -1,6 +1,6 @@
-import * as THREE from "../vendor/three.module.js?v=15";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=15";
-import { cameraRig, fitCard, solveProjectedLayout } from "./layout.js?v=15";
+import * as THREE from "../vendor/three.module.js?v=16";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=16";
+import { cameraRig, solveProjectedLayout } from "./layout.js?v=16";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -60,41 +60,36 @@ export function mountTable(canvas) {
   scene.background = new THREE.Color(0x000000);
   scene.fog = new THREE.FogExp2(0x000000, 0.012);
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 80);
-  const hemi = new THREE.AmbientLight(0xfff4e4, 0.28);
+  const hemi = new THREE.AmbientLight(0xfff4e4, 0.16);
   scene.add(hemi);
-  const key = new THREE.DirectionalLight(0xffe2b8, 1.15);
-  key.position.set(0, 8, 2);
+  const key = new THREE.DirectionalLight(0xfff0d8, 2.4);
+  key.position.set(1.2, 7.5, 3.4);
   key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.radius = 3;
+  key.shadow.bias = -0.0008;
   key.shadow.camera.near = 0.5;
-  key.shadow.camera.far = 24;
-  key.shadow.camera.left = -8;
-  key.shadow.camera.right = 8;
-  key.shadow.camera.top = 8;
-  key.shadow.camera.bottom = -8;
+  key.shadow.camera.far = 28;
+  key.shadow.camera.left = -10;
+  key.shadow.camera.right = 10;
+  key.shadow.camera.top = 10;
+  key.shadow.camera.bottom = -10;
   scene.add(key);
-  const plane = new THREE.Mesh(
-    new THREE.PlaneGeometry(240, 240),
-    new THREE.ShaderMaterial({
-      vertexShader: `
-        varying vec3 vPos;
-        void main() {
-          vec4 world = modelMatrix * vec4(position, 1.0);
-          vPos = world.xyz;
-          gl_Position = projectionMatrix * viewMatrix * world;
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vPos;
-        void main() {
-          float d = length(vPos.xz);
-          float fade = smoothstep(5.5, 14.0, d);
-          vec3 col = mix(vec3(0.055, 0.043, 0.032), vec3(0.0), fade);
-          gl_FragColor = vec4(col, 1.0);
-        }
-      `,
-    }),
-  );
+  const felt = new THREE.MeshStandardMaterial({ color: 0x16120f, roughness: 1, metalness: 0 });
+  felt.onBeforeCompile = (shader) => {
+    shader.vertexShader = `varying vec3 vFadePos;\n${shader.vertexShader}`;
+    shader.vertexShader = shader.vertexShader.replace(
+      "#include <worldpos_vertex>",
+      "#include <worldpos_vertex>\n vFadePos = worldPosition.xyz;",
+    );
+    shader.fragmentShader = `varying vec3 vFadePos;\n${shader.fragmentShader}`;
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <opaque_fragment>",
+      `#include <opaque_fragment>
+       gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.0), smoothstep(4.2, 11.5, length(vFadePos.xz)));`,
+    );
+  };
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), felt);
   plane.rotation.x = -Math.PI / 2;
   plane.receiveShadow = true;
   scene.add(plane);
@@ -129,8 +124,18 @@ export function mountTable(canvas) {
     camera.updateProjectionMatrix();
   }
 
-  function cardMesh(texture, w, h) {
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), cardMaterial(texture, back));
+  function cardMesh(texture, w, h, mode) {
+    const material = cardMaterial(texture, back);
+    if (mode === "reach") {
+      material.color.set(0xfff3df);
+      material.emissive.set(0xc47a32);
+      material.emissiveIntensity = 0.85;
+    } else if (mode === "dim") {
+      material.color.set(0x3a3834);
+      material.emissive.set(0x000000);
+      material.emissiveIntensity = 0;
+    }
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), material);
     mesh.rotation.x = -Math.PI / 2;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -141,7 +146,10 @@ export function mountTable(canvas) {
     view = next;
     for (const group of groups.values()) scene.remove(group);
     groups.clear();
-    for (const light of lights.values()) scene.remove(light);
+    for (const light of lights.values()) {
+      scene.remove(light);
+      if (light.target) scene.remove(light.target);
+    }
     lights.clear();
     if (!next) return;
     const living = next.players.filter((p) => p.alive !== false);
@@ -149,42 +157,43 @@ export function mountTable(canvas) {
     const others = living.filter((p) => p.id !== next.yourId);
     const ordered = self ? [self, ...others] : living;
     const layout = solveProjectedLayout(width, height, ordered.length);
-    const rig = cameraRig(width, height);
-    const put = (zone, texture, playerId) => {
-      if (!zone || !texture) return;
-      const fit = fitCard(rig, zone, width, height);
-      if (!fit) return;
-      const mesh = cardMesh(texture, fit.w, fit.d);
-      mesh.position.set(fit.center.x, 0.03, fit.center.z);
-      mesh.userData.baseY = 0.03;
+    const mine = next.yourId;
+    const onTurn = next.currentId === mine && next.turnPhase === "play" && !next.prompt;
+    const put = (zone, texture, playerId, mode) => {
+      if (!zone?.world || !texture) return;
+      const mesh = cardMesh(texture, zone.world.w, zone.world.d, mode);
+      mesh.position.set(zone.world.x, mode === "reach" ? 0.12 : 0.03, zone.world.z);
+      mesh.userData.baseY = mesh.position.y;
       if (playerId) mesh.userData.playerId = playerId;
       scene.add(mesh);
       groups.set(zone.id, mesh);
     };
     ordered.forEach((player, index) => {
       const zone = (kind) => layout.leaves.find((item) => item.seat === index && item.kind === kind);
+      const reach = onTurn && player.id !== mine && player.connected !== false && player.distance != null && player.distance <= weaponRange(next);
+      const mode = player.id === mine ? "self" : (reach ? "reach" : "dim");
       const character = characterById(player.character);
       const role = player.role && ROLES[player.role];
-      put(zone("character"), loadTexture(character?.image, textures) || back, player.id);
-      put(zone("role"), role ? loadTexture(role.image, textures) : back, player.id);
-      if (player.id !== next.yourId) put(zone("hand"), back, player.id);
+      put(zone("character"), loadTexture(character?.image, textures) || back, player.id, mode);
+      put(zone("role"), role ? loadTexture(role.image, textures) : back, player.id, mode);
+      if (player.id !== mine) put(zone("hand"), back, player.id, mode);
       const eq = player.equipment || {};
-      put(zone("weapon"), eq.weapon ? loadTexture(CARD_INFO[eq.weapon.type]?.image, textures) : null, player.id);
+      put(zone("weapon"), eq.weapon ? loadTexture(CARD_INFO[eq.weapon.type]?.image, textures) : null, player.id, mode);
       const blue = eq.jail || eq.dynamite || eq.barrel || eq.mustang || eq.scope;
-      put(zone("jail"), blue ? loadTexture(CARD_INFO[blue.type]?.image, textures) : null, player.id);
-      if (eq.jail && eq.dynamite) put(zone("dynamite"), loadTexture(CARD_INFO[eq.dynamite.type]?.image, textures), player.id);
-      const reach = player.id !== next.yourId && player.connected !== false && player.distance != null && player.distance <= weaponRange(next);
+      put(zone("jail"), blue ? loadTexture(CARD_INFO[blue.type]?.image, textures) : null, player.id, mode);
+      if (eq.jail && eq.dynamite) put(zone("dynamite"), loadTexture(CARD_INFO[eq.dynamite.type]?.image, textures), player.id, mode);
       const anchor = zone("character");
-      const fit = anchor && fitCard(rig, anchor, width, height);
-      if (fit && reach) {
-        const pool = new THREE.PointLight(0xffc48a, 1.6, 3.2, 2);
-        pool.position.set(fit.center.x, 1.4, fit.center.z);
+      if (anchor?.world && reach) {
+        const pool = new THREE.SpotLight(0xffb15a, 28, 6, 0.55, 0.35, 1.2);
+        pool.position.set(anchor.world.x, 2.4, anchor.world.z + 0.2);
+        pool.target.position.set(anchor.world.x, 0, anchor.world.z);
         scene.add(pool);
+        scene.add(pool.target);
         lights.set(player.id, pool);
       }
     });
-    if (next.deckCount) put(layout.deck, back, "");
-    if (next.discardTop) put(layout.discard, loadTexture(CARD_INFO[next.discardTop.type]?.image, textures), "");
+    if (next.deckCount) put(layout.deck, back, "", "self");
+    if (next.discardTop) put(layout.discard, loadTexture(CARD_INFO[next.discardTop.type]?.image, textures), "", "self");
     groups.__layout = layout;
     groups.__order = ordered.map((player) => player.id);
   }

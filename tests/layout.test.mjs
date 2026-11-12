@@ -36,6 +36,23 @@ for (const [width, height] of views) {
   }
 }
 
+test("four seats sit on a centered ellipse and the near cards stay large", () => {
+  const width = 1888;
+  const height = 1000;
+  const layout = solveProjectedLayout(width, height, 4);
+  const centers = layout.seats.map((seat) => ({ x: seat.cx, y: seat.cy }));
+  const mid = width / 2;
+  assert.ok(Math.abs(centers[0].x - mid) < 30, "you sit at the bottom center");
+  assert.ok(centers[0].y > centers[2].y, "your seat is nearer than the far seat");
+  assert.ok(Math.abs((centers[1].x + centers[3].x) / 2 - mid) < 40, "left and right mirror each other");
+  assert.ok(centers[3].x - centers[1].x > width * 0.55, "the ellipse uses the width");
+  const near = layout.leaves.find((zone) => zone.kind === "character" && zone.seat === 0);
+  const far = layout.leaves.find((zone) => zone.kind === "character" && zone.seat === 2);
+  assert.ok(near.w > 90, `near card is ${near.w}`);
+  assert.ok(far.h < near.h * 0.75, "far card is foreshortened");
+  assert.ok(near.h / near.w < 1.35, "the near card is not face-on");
+});
+
 test("the table origin projects to the middle of the view", () => {
   const width = 1888;
   const height = 1000;

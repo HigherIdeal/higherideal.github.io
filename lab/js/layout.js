@@ -31,9 +31,9 @@ function norm(a) {
 
 export function cameraRig(width, height) {
   const aspect = width / Math.max(1, height);
-  const fov = 42 * Math.PI / 180;
-  const tilt = 50 * Math.PI / 180;
-  const dist = aspect > 1.35 ? 9.2 : 10.4;
+  const fov = 52 * Math.PI / 180;
+  const tilt = 48 * Math.PI / 180;
+  const dist = aspect > 1.2 ? 6.2 : 7.2;
   return {
     fov,
     aspect,
@@ -81,14 +81,13 @@ export function screenToTable(cam, px, py, width, height) {
 
 function playField(width, height) {
   const wide = width >= 800;
-  const top = 72;
-  const bottom = wide ? 210 : Math.round(height * 0.4);
-  const right = wide ? 280 : 12;
-  const left = 12;
+  const top = 64;
+  const bottom = wide ? 172 : Math.round(height * 0.33);
+  const side = wide ? 20 : 10;
   return {
-    x: left,
+    x: side,
     y: top,
-    w: Math.max(80, width - left - right),
+    w: Math.max(80, width - side * 2),
     h: Math.max(80, height - top - bottom),
   };
 }
@@ -97,85 +96,167 @@ function rectsOverlap(a, b, pad = 0) {
   return a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
 }
 
-function leavesOf(seat) {
-  const pad = 8;
-  const labelH = 22;
-  const gap = GAP;
-  const innerX = seat.x + pad;
-  const innerY = seat.y + pad;
-  const innerW = seat.w - pad * 2;
-  const innerH = seat.h - pad * 2 - labelH - gap;
-  const cols = 4;
-  const colW = (innerW - gap * (cols - 1)) / cols;
-  const kinds = ["role", "character", "hand", "gear"];
-  const colsRect = kinds.map((kind, index) => ({
-    id: `${seat.id}-${kind}`,
-    kind,
-    seat: seat.index,
-    x: innerX + index * (colW + gap),
-    y: innerY,
-    w: colW,
-    h: innerH,
-  }));
-  const gear = colsRect[3];
-  const weaponH = (gear.h - gap) / 2;
-  const weapon = { ...gear, id: `${seat.id}-weapon`, kind: "weapon", h: weaponH };
-  const table = { ...gear, id: `${seat.id}-table`, kind: "table", y: gear.y + weaponH + gap, h: weaponH };
-  const half = (table.w - gap) / 2;
-  const jail = { ...table, id: `${seat.id}-jail`, kind: "jail", w: half };
-  const dynamite = { ...table, id: `${seat.id}-dynamite`, kind: "dynamite", x: table.x + half + gap, w: half };
-  const label = {
-    id: `${seat.id}-label`,
-    kind: "label",
-    seat: seat.index,
-    x: innerX,
-    y: seat.y + seat.h - pad - labelH,
-    w: innerW,
-    h: labelH,
-  };
-  return [colsRect[0], colsRect[1], colsRect[2], weapon, jail, dynamite, label];
+function boxOf(cam, center, cardW, cardD, width, height) {
+  return projectCard(cam, center, cardW, cardD, width, height);
 }
 
-function place(play, count, scale) {
-  const col = Math.min(play.w, play.h) * 0.28 * scale;
-  const deckW = col * 0.95;
-  const deckH = col * 1.15;
+export function placeLayout(width, height, count, cardW, radiusScale = 1) {
+  const cam = cameraRig(width, height);
+  const play = playField(width, height);
   const cx = play.x + play.w / 2;
   const cy = play.y + play.h / 2;
-  const deck = { id: "deck", kind: "deck", x: cx - deckW - GAP, y: cy - deckH / 2, w: deckW, h: deckH };
-  const discard = { id: "discard", kind: "discard", x: cx + GAP, y: cy - deckH / 2, w: deckW, h: deckH };
-  const gap = GAP;
-  const pad = 8;
-  const seatW = pad * 2 + col * 4 + gap * 3;
-  const seatH = pad * 2 + Math.max(col * 1.05, 36) + 22 + gap;
-  const rx = (play.w - seatW) / 2 - 4;
-  const ry = (play.h - seatH) / 2 - 4;
-  if (rx < 8 || ry < 8 || seatW > play.w || seatH > play.h) return null;
+  const cardD = cardW * 1.45;
+  const rx = play.w * 0.42 * radiusScale;
+  const ry = play.h * 0.30 * radiusScale;
   const seats = [];
-  const leaves = [deck, discard];
+  const leaves = [];
   for (let i = 0; i < count; i += 1) {
     const angle = Math.PI / 2 + (Math.PI * 2 * i) / count;
-    const sx = cx + Math.cos(angle) * rx - seatW / 2;
-    const sy = cy + Math.sin(angle) * ry - seatH / 2;
-    if (sx < play.x || sy < play.y || sx + seatW > play.x + play.w || sy + seatH > play.y + play.h) return null;
-    const seat = { id: `seat-${i}`, kind: "seat", index: i, x: sx, y: sy, w: seatW, h: seatH, scale };
-    seats.push(seat);
-    leaves.push(...leavesOf(seat));
+    const sx = cx + Math.cos(angle) * rx;
+    const sy = cy + Math.sin(angle) * ry;
+    const world = screenToTable(cam, sx, sy, width, height);
+    if (!world || !boxOf(cam, world, cardW, cardD, width, height)) {
+      if (globalThis.__DBG) console.log("seat-miss", i, Math.round(sx), Math.round(sy));
+      return null;
+    }
+    const probeBox = boxOf(cam, world, cardW, cardD, width, height);
+    const stepX = probeBox.w + 12;
+    const put = (kind, px, py) => {
+      const center = screenToTable(cam, px, py, width, height);
+      if (!center) return null;
+      const box = boxOf(cam, { x: center.x, y: 0.02, z: center.z }, cardW, cardD, width, height);
+      if (!box) return null;
+      return {
+        id: `seat-${i}-${kind}`,
+        kind,
+        seat: i,
+        ...box,
+        world: { x: center.x, y: 0.02, z: center.z, w: cardW, d: cardD },
+      };
+    };
+    const compact = count >= 6;
+    const role = compact ? null : put("role", sx - stepX / 2, sy);
+    const character = put("character", compact ? sx : sx + stepX / 2, sy);
+    if (!character || (!compact && !role)) return null;
+    let boxes = compact ? [character] : [role, character];
+    if (!compact && i !== 0) {
+      const rowBottom = Math.max(role.y + role.h, character.y + character.h);
+      let handY = rowBottom + probeBox.h * 0.9;
+      let spread = stepX;
+      let hand = null;
+      let gear = null;
+      for (let nudge = 0; nudge < 8; nudge += 1) {
+        hand = put("hand", sx - spread / 2, handY);
+        gear = put("weapon", sx + spread / 2, handY);
+        if (!hand || !gear) return null;
+        const top = Math.min(hand.y, gear.y);
+        const gap = gear.x - (hand.x + hand.w);
+        if (top >= rowBottom + 8 && gap >= 8) break;
+        if (top < rowBottom + 8) handY += rowBottom + 8 - top + 8;
+        if (gap < 8) spread += 8 - gap + 10;
+      }
+      const halfW = Math.max(8, (gear.w - 6) / 2);
+      const halfH = Math.max(8, (gear.h - 6) / 2);
+      const weapon = { ...gear, id: `seat-${i}-weapon`, kind: "weapon", w: halfW, h: gear.h };
+      const jail = { ...gear, id: `seat-${i}-jail`, kind: "jail", x: gear.x + halfW + 6, w: halfW, h: halfH };
+      const dynamite = { ...jail, id: `seat-${i}-dynamite`, kind: "dynamite", y: gear.y + halfH + 6 };
+      boxes = [role, character, hand, weapon, jail, dynamite];
+    }
+    const shown = boxes;
+    const union = shown.reduce((acc, box) => ({
+      x: Math.min(acc.x, box.x),
+      y: Math.min(acc.y, box.y),
+      r: Math.max(acc.r, box.x + box.w),
+      b: Math.max(acc.b, box.y + box.h),
+    }), { x: Infinity, y: Infinity, r: -Infinity, b: -Infinity });
+    const below = sy >= cy;
+    const label = {
+      id: `seat-${i}-label`,
+      kind: "label",
+      seat: i,
+      x: union.x,
+      y: below ? union.b + 8 : union.y - 30,
+      w: Math.max(24, union.r - union.x),
+      h: 22,
+    };
+    leaves.push(...shown, label);
+    seats.push({
+      id: `seat-${i}`,
+      kind: "seat",
+      index: i,
+      x: union.x,
+      y: union.y,
+      w: union.r - union.x,
+      h: label.y + label.h - union.y,
+      cx: sx,
+      cy: sy,
+    });
   }
-  return { seats, leaves, deck, discard, scale };
+  const deckWorld = screenToTable(cam, cx, cy, width, height);
+  if (!deckWorld) return null;
+  let deck = null;
+  let discard = null;
+  for (const portion of [0.85, 0.7, 0.55, 0.4, 0.28, 0.18]) {
+    const deckW = cardW * portion;
+    const deckD = deckW * 1.45;
+    const deckCenter = { x: deckWorld.x - deckW * 0.58, y: 0.02, z: deckWorld.z };
+    const discardCenter = { x: deckWorld.x + deckW * 0.58, y: 0.02, z: deckWorld.z };
+    const deckBox = boxOf(cam, deckCenter, deckW, deckD, width, height);
+    const discardBox = boxOf(cam, discardCenter, deckW, deckD, width, height);
+    if (!deckBox || !discardBox) continue;
+    const trialDeck = { id: "deck", kind: "deck", ...deckBox, world: { ...deckCenter, w: deckW, d: deckD } };
+    const trialDiscard = { id: "discard", kind: "discard", ...discardBox, world: { ...discardCenter, w: deckW, d: deckD } };
+    const crowded = leaves.some((zone) => rectsOverlap(zone, trialDeck, 4) || rectsOverlap(zone, trialDiscard, 4))
+      || rectsOverlap(trialDeck, trialDiscard, 4);
+    if (!crowded) {
+      deck = trialDeck;
+      discard = trialDiscard;
+      break;
+    }
+  }
+  if (!deck) return null;
+  leaves.push(deck, discard);
+  const inside = leaves.every((zone) => {
+    if (zone.kind === "label") return zone.y + zone.h <= height - 2;
+    const floor = height - (width >= 800 ? 160 : Math.round(height * 0.34));
+    return zone.x >= 2 && zone.y >= 36
+      && zone.x + zone.w <= width - 2
+      && zone.y + zone.h <= floor;
+  });
+  if (!inside) return null;
+  return { seats, leaves, deck, discard, scale: cardW, play, deckCenter: { x: cx, y: cy } };
 }
 
 export function solveProjectedLayout(width, height, playerCount) {
   const count = Math.max(1, Math.min(7, playerCount));
   const play = playField(width, height);
-  let scale = 1;
-  let laid = place(play, count, scale);
-  for (let step = 0; step < 36 && (!laid || layoutOverlaps(laid.leaves, 2)); step += 1) {
-    scale *= 0.9;
-    laid = place(play, count, scale);
+  const fits = (cardW) => {
+    let bestFit = null;
+    let loR = 0.34;
+    let hiR = 1;
+    for (let step = 0; step < 10; step += 1) {
+      const mid = (loR + hiR) / 2;
+      const laid = placeLayout(width, height, count, cardW, mid);
+      if (laid && !layoutOverlaps(laid.leaves, 2)) {
+        bestFit = laid;
+        loR = mid;
+      } else hiR = mid;
+    }
+    return bestFit;
+  };
+  let lo = 0.12;
+  let hi = 2.8;
+  let best = null;
+  for (let step = 0; step < 16; step += 1) {
+    const mid = (lo + hi) / 2;
+    const laid = fits(mid);
+    if (laid) {
+      best = laid;
+      lo = mid;
+    } else hi = mid;
   }
-  if (!laid) laid = place(play, count, 0.2) || { seats: [], leaves: [], deck: null, discard: null, scale: 0.2 };
-  return { ...laid, play, width, height };
+  if (!best) best = placeLayout(width, height, count, 0.12) || { seats: [], leaves: [], deck: null, discard: null, scale: 0.12, play, deckCenter: null };
+  return { ...best, play, width, height };
 }
 
 export function layoutOverlaps(zones, pad = 0) {
@@ -212,7 +293,7 @@ function inside(box, zone, slack = 0) {
 export function fitCard(cam, zone, width, height) {
   const center = screenToTable(cam, zone.x + zone.w / 2, zone.y + zone.h / 2, width, height);
   if (!center) return null;
-  let lo = 0.02;
+  let lo = 0.004;
   let hi = 6;
   let best = null;
   for (let step = 0; step < 18; step += 1) {
