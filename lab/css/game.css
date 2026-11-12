@@ -349,9 +349,7 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .flip-face { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 8px; overflow: hidden; }
 .flip-back { transform: rotateY(180deg); }
 .flip-back img { width: 100%; height: 100%; object-fit: cover; }
-.bullets { display: inline-flex; gap: 2px; }
-.bullets i { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--line); background: transparent; display: block; }
-.bullets i.on { background: var(--line); }
+.bullets { display: inline-flex; align-items: flex-end; gap: 4px; }
 
 .dock {
   display: flex; flex-direction: column; min-height: 0;
@@ -499,8 +497,6 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .table-screen .prompt-note { color: #e6d6bb; }
 .table-screen .who strong { text-shadow: 0 2px 6px #000; }
 .table-screen .who .presence { color: #c1b39e; }
-.table-screen .bullets i { border-color: #e6c69c; }
-.table-screen .bullets i.on { background: #c1a075; }
 .table-screen .seat.is-distant .stack {
   filter: brightness(.46) saturate(.68) drop-shadow(0 9px 12px rgba(0,0,0,.5));
 }
@@ -702,9 +698,33 @@ body:has(.table-screen) { background: #000; }
 }
 .board.is-webgl .center-piles,
 .board.is-webgl .felt .stack { display: none; }
-.who .bullets { display: inline-flex; gap: 3px; }
-.who .bullets i { width: 8px; height: 8px; border-radius: 50%; border: 1px solid #e6c69c; background: transparent; display: block; }
-.who .bullets i.on { background: #e6c69c; }
+.who .bullets { display: inline-flex; align-items: flex-end; gap: 4px; }
+.who .bullet {
+  position: relative;
+  width: 16px;
+  height: 32px;
+  display: block;
+  flex: none;
+}
+.who .bullet svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.who .bullet.is-empty .round { opacity: 0; }
+.who .bullet.is-live .ghost { opacity: 0; }
+.who .bullet.is-pop .round { animation: bullet-pop .55s ease forwards; }
+.who .bullet.is-drop .round { animation: bullet-drop .48s cubic-bezier(.2,.8,.2,1); }
+@keyframes bullet-pop {
+  0% { opacity: 1; transform: translateY(0) rotate(0deg); }
+  42% { opacity: 1; transform: translateY(-16px) rotate(-14deg) scale(1.08); }
+  100% { opacity: 0; transform: translateY(-26px) rotate(-22deg) scale(.72); }
+}
+@keyframes bullet-drop {
+  0% { opacity: 0; transform: translateY(-20px) scale(.86); }
+  72% { opacity: 1; transform: translateY(2px) scale(1.04); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (max-width: 800px) {
+  .who .bullet { width: 14px; height: 28px; }
+  .who .bullets { gap: 3px; }
+}
 .board.is-webgl .who {
   position: static;
   display: flex;

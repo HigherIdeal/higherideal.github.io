@@ -1,6 +1,6 @@
-import * as THREE from "../vendor/three.module.js?v=21";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=21";
-import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=21";
+import * as THREE from "../vendor/three.module.js?v=22";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=22";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=22";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 

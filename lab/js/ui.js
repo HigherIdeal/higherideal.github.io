@@ -1,8 +1,8 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=21";
-import { naturalKorean } from "./engine.js?v=21";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=21";
-import { solveProjectedLayout } from "./layout.js?v=21";
-import { mountTable } from "./table3d.js?v=21";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=22";
+import { naturalKorean } from "./engine.js?v=22";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=22";
+import { solveProjectedLayout } from "./layout.js?v=22";
+import { mountTable } from "./table3d.js?v=22";
 
 const ui = {
   selected: null,
@@ -58,6 +58,8 @@ function paint(app, ctx) {
     applyEffects(app, previousView, ctx.view, previousFrame);
   }
   ui.paintedView = ctx.view;
+  ui.life = {};
+  for (const person of ctx.view?.players || []) ui.life[person.id] = person.hp;
   const view = ctx.view;
   app.dataset.screen = view?.phase || (ctx.status?.mode === "entry" ? "entry" : "wait");
   app.dataset.status = ctx.status?.mode || "";
@@ -339,7 +341,7 @@ function seatHtml(p, view) {
     ${stackHtml(`seat-${p.id}`, seatCards(p, view))}
     <button type="button" class="seat-btn" data-player="${esc(p.id)}" ${selected ? `data-legal-target="1"` : ""} aria-label="${esc(p.nickname)}, 생명 ${p.hp}/${p.maxHp}">
       <span class="who">
-        <span class="bullets" aria-label="생명 ${p.hp}">${bullets(p.hp, p.maxHp)}</span>
+        <span class="bullets" aria-label="생명 ${p.hp}/${p.maxHp}">${bullets(p.id, p.hp, p.maxHp)}</span>
         <strong>${esc(p.nickname)}</strong>
       </span>
     </button>
@@ -384,10 +386,34 @@ function presenceHtml(p) {
   return `<span class="presence ${on ? "is-on" : "is-off"}" data-presence="${on ? "on" : "off"}">${on ? "접속" : "오프라인"}</span>`;
 }
 
-function bullets(hp, max) {
+function bulletGraphic(ghost) {
+  if (ghost) {
+    return `<svg class="ghost" viewBox="0 0 24 48" aria-hidden="true">
+      <path d="M12 3.2 18 15.2H6Z" fill="none" stroke="#e6c69c" stroke-width="1.6" stroke-dasharray="2.4 1.7" stroke-linejoin="round"/>
+      <rect x="6.4" y="16" width="11.2" height="26" rx="1.2" fill="none" stroke="#e6c69c" stroke-width="1.6" stroke-dasharray="2.4 1.7"/>
+    </svg>`;
+  }
+  return `<svg class="round" viewBox="0 0 24 48" aria-hidden="true">
+    <path d="M12 2.2 18.2 15H5.8Z" fill="#c4622e"/>
+    <path d="M12 2.2 15.2 15 12 13.4Z" fill="#f0b184"/>
+    <rect x="6.2" y="14.6" width="11.6" height="25.2" rx="1.1" fill="#e2bc58"/>
+    <rect x="8" y="14.6" width="2.1" height="25.2" fill="#f8e7ad"/>
+    <rect x="5.2" y="37.2" width="13.6" height="5.4" rx="1" fill="#a67c32"/>
+    <circle cx="12" cy="39.8" r="1.35" fill="#5c4316"/>
+  </svg>`;
+}
+
+function bullets(id, hp, max) {
   if (!max) return "";
+  const prev = ui.life?.[id];
   let html = "";
-  for (let i = 0; i < max; i += 1) html += `<i class="${i < hp ? "on" : ""}"></i>`;
+  for (let i = 0; i < max; i += 1) {
+    const live = i < hp;
+    let anim = "";
+    if (prev != null && i >= hp && i < prev) anim = " is-pop";
+    else if (prev != null && i >= prev && i < hp) anim = " is-drop";
+    html += `<i class="bullet ${live ? "is-live" : "is-empty"}${anim}">${bulletGraphic(false)}${bulletGraphic(true)}</i>`;
+  }
   return html;
 }
 
@@ -397,7 +423,7 @@ function selfTray(p, view) {
     ${stackHtml("self", seatCards(p, view))}
     <button type="button" class="seat-btn" data-player="${esc(p.id)}" ${selected ? 'data-legal-target="1"' : ""} aria-label="${esc(p.nickname)}, 생명 ${p.hp}/${p.maxHp}">
       <span class="who">
-        <span class="bullets" aria-label="생명 ${p.hp}">${bullets(p.hp, p.maxHp)}</span>
+        <span class="bullets" aria-label="생명 ${p.hp}/${p.maxHp}">${bullets(p.id, p.hp, p.maxHp)}</span>
         <strong>${esc(p.nickname)}</strong>
       </span>
     </button>
