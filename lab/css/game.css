@@ -364,8 +364,44 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .victory ul { list-style: none; padding: 0; margin: 0 0 10px; }
 .help { border: 1px solid var(--line); border-radius: 2px; padding: 16px; max-width: 460px; color: var(--ink); background: var(--panel); }
 .help::backdrop { background: rgba(90, 70, 40, 0.28); }
-#zoom-layer { position: fixed; inset: 0; z-index: 80; pointer-events: none; background: rgba(58, 42, 26, 0.28); }
-#zoom-layer .card { position: fixed; margin: 0; z-index: 81; transform: none; }
+#zoom-layer {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(58, 42, 26, 0.46);
+  display: flex; align-items: center; justify-content: center;
+}
+#zoom-layer[hidden] { display: none; }
+.spread-sheet {
+  width: min(100%, 980px);
+  max-height: calc(100dvh - 20px);
+  display: flex; flex-direction: column; justify-content: center; gap: 8px;
+  background: none; border: 0; padding: 8px 0 12px;
+}
+.spread-top {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; color: #fffdf8;
+}
+.spread-top p { margin: 0; font-size: 15px; }
+.spread-top .text-btn { color: #fffdf8; background: none; border: 0; font-size: 15px; }
+.spread-scroller {
+  display: flex; align-items: flex-end; gap: 12px;
+  overflow-x: auto; overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+  padding: 18px 16px 8px; touch-action: pan-x;
+}
+.spread-card {
+  flex: 0 0 auto; width: clamp(148px, 46vw, 210px);
+  scroll-snap-align: center; transition: transform .18s ease;
+}
+.spread-card .card { width: 100%; touch-action: pan-x; }
+.spread-card.is-current { transform: translateY(-14px); }
+.spread-card.is-current .card { outline: 1px solid #5c4030; outline-offset: 4px; }
+.spread-actions {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  min-height: 42px; padding: 0 12px;
+}
+.spread-note {
+  margin: 0; color: #fffdf8; font-size: 14px; text-align: center;
+}
 
 @media (max-width: 800px) {
   .table-screen { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(140px, 28dvh); height: 100dvh; max-height: 100dvh; }

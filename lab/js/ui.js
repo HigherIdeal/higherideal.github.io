@@ -1,4 +1,4 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=10";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=11";
 
 const ui = {
   selected: null,
@@ -10,7 +10,8 @@ const ui = {
   chat: "",
   picker: null,
   wired: false,
-  heldStack: null,
+  spread: null,
+  spreadPick: null,
 };
 
 function esc(value) {
@@ -57,9 +58,10 @@ export function mount(app, ctx) {
     ui.wired = true;
     app.addEventListener("click", (event) => onClick(event, app));
     app.addEventListener("submit", (event) => onSubmit(event, app));
-    wireZoom();
+    wireSpread();
   }
   app.__ctx = ctx;
+  renderSpread(ctx);
 }
 
 function screenHtml(ctx) {
@@ -526,7 +528,6 @@ function onSubmit(event, app) {
 function onClick(event, app) {
   const ctx = app.__ctx;
   const view = ctx.view;
-  if (eatingClick && event.target.closest(".card")) return;
   if (event.target.closest("[data-action=help]")) app.querySelector("#help")?.showModal();
   if (event.target.closest("[data-action=close-help]")) app.querySelector("#help")?.close();
   if (event.target.closest("[data-tab]")) {
@@ -543,8 +544,7 @@ function onClick(event, app) {
     ctx.onAction({ type: "choose", characterId: event.target.closest("[data-char]").dataset.char });
     return;
   }
-  if (event.target.closest("[data-self-role]")) {
-    if (eatingClick) return;
+  if (event.target.closest("[data-self-role]") && !event.target.closest(".stack")) {
     ui.roleFlip = !ui.roleFlip;
     mount(app, ctx);
     return;
@@ -607,10 +607,22 @@ function onClick(event, app) {
     playAt(ctx, ui.selected, seat.dataset.player);
     return;
   }
-  const hand = event.target.closest("[data-hand-card]");
-  if (hand) {
-    if (eatingClick) return;
-    onHand(ctx, hand.closest(".card"));
+  const stack = event.target.closest(".stack");
+  if (stack) {
+    if (stack.dataset.hand) {
+      const card = event.target.closest("[data-hand-card]")?.closest(".card");
+      ui.spread = { kind: "hand" };
+      ui.spreadPick = card?.dataset.cardId || null;
+      renderSpread(ctx);
+      return;
+    }
+    const stackId = stack.dataset.stackId || "";
+    const playerId = stackId === "self" ? view?.yourId : (stackId.startsWith("seat-") ? stackId.slice(5) : "");
+    if (playerId) {
+      ui.spread = { kind: "seat", playerId };
+      ui.spreadPick = null;
+      renderSpread(ctx);
+    }
   }
 }
 
@@ -677,101 +689,196 @@ function onHand(ctx, cardEl) {
   mount(document.querySelector("#app"), ctx);
 }
 
-let zoom = null;
-let eatingClick = false;
+let spreadDrag = null;
 
-function wireZoom() {
+function closeSpread() {
+  ui.spread = null;
+  ui.spreadPick = null;
   const layer = document.querySelector("#zoom-layer");
-  window.addEventListener("pointerdown", (event) => {
-    if (event.button > 0) return;
-    const stack = event.target.closest?.(".stack");
-    const cards = stack
-      ? [...stack.querySelectorAll(".card")]
-      : (event.target.closest?.(".card") ? [event.target.closest(".card")] : []);
-    if (!cards.length) return;
-    const point = { x: event.clientX, y: event.clientY, cards, moved: false, opened: false };
-    point.timer = setTimeout(() => openZoom(cards, layer, point), 240);
-    zoom = point;
-  });
-  window.addEventListener("pointermove", (event) => {
-    if (!zoom || zoom.opened) return;
-    if (Math.hypot(event.clientX - zoom.x, event.clientY - zoom.y) > 12) {
-      clearTimeout(zoom.timer);
-      zoom.moved = true;
-    }
-  });
-  window.addEventListener("pointerup", () => finishZoom(layer));
-  window.addEventListener("pointercancel", () => finishZoom(layer));
+  if (!layer) return;
+  layer.hidden = true;
+  layer.innerHTML = "";
 }
 
-function placeClone(clone, rect) {
-  clone.style.left = `${rect.left}px`;
-  clone.style.top = `${rect.top}px`;
-  clone.style.width = `${rect.width}px`;
-  clone.style.height = `${rect.height}px`;
-}
-
-function openZoom(cards, layer, point) {
-  const live = cards.filter((card) => card.isConnected);
-  if (!live.length) return;
-  const clones = live.map((card) => {
-    const rect = card.getBoundingClientRect();
-    const clone = card.cloneNode(true);
-    clone.querySelectorAll("[data-hand-card],[data-self-role],[data-store-card],[data-pick-card],[data-response-card]").forEach((node) => {
-      node.removeAttribute("data-hand-card");
-      node.removeAttribute("data-self-role");
-      node.removeAttribute("data-store-card");
-      node.removeAttribute("data-pick-card");
-      node.removeAttribute("data-response-card");
-    });
-    clone.style.transition = "none";
-    clone.style.margin = "0";
-    clone.style.transform = "none";
-    placeClone(clone, rect);
-    return { clone, rect };
+function wireSpread() {
+  const layer = document.querySelector("#zoom-layer");
+  layer.addEventListener("pointerdown", (event) => {
+    if (!event.target.closest(".spread-scroller")) return;
+    spreadDrag = { x: event.clientX, y: event.clientY, moved: false };
   });
-  layer.replaceChildren(...clones.map((item) => item.clone));
-  layer.hidden = false;
-  point.opened = true;
-  point.clones = clones;
-  eatingClick = true;
-  requestAnimationFrame(() => {
-    const n = clones.length;
-    const pad = 18;
-    const gap = n > 1 ? 12 : 0;
-    let cardW = Math.min(176, (window.innerWidth - pad * 2 - gap * (n - 1)) / n);
-    let cardH = cardW * 1.555;
-    const maxH = window.innerHeight - pad * 2;
-    if (cardH > maxH) {
-      cardH = maxH;
-      cardW = cardH / 1.555;
-    }
-    const total = n * cardW + (n - 1) * gap;
-    const startX = (window.innerWidth - total) / 2;
-    const top = (window.innerHeight - cardH) / 2;
-    clones.forEach(({ clone }, i) => {
-      clone.style.transition = "left .42s cubic-bezier(.22,.7,.25,1), top .42s cubic-bezier(.22,.7,.25,1), width .42s cubic-bezier(.22,.7,.25,1), height .42s cubic-bezier(.22,.7,.25,1)";
-      clone.style.left = `${startX + i * (cardW + gap)}px`;
-      clone.style.top = `${top}px`;
-      clone.style.width = `${cardW}px`;
-      clone.style.height = `${cardH}px`;
-    });
+  layer.addEventListener("pointermove", (event) => {
+    if (!spreadDrag) return;
+    if (Math.hypot(event.clientX - spreadDrag.x, event.clientY - spreadDrag.y) > 10) spreadDrag.moved = true;
+  });
+  layer.addEventListener("click", (event) => onSpreadClick(event, layer));
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && ui.spread) closeSpread();
   });
 }
 
-function finishZoom(layer) {
-  if (!zoom) return;
-  clearTimeout(zoom.timer);
-  const point = zoom;
-  zoom = null;
-  if (!point.opened) {
-    eatingClick = false;
+function onSpreadClick(event, layer) {
+  const ctx = document.querySelector("#app")?.__ctx;
+  if (!ctx) return;
+  const moved = spreadDrag?.moved;
+  spreadDrag = null;
+  if (event.target === layer || event.target.closest("[data-spread-close]")) {
+    closeSpread();
     return;
   }
-  for (const item of point.clones || []) placeClone(item.clone, item.rect);
-  setTimeout(() => {
+  if (moved) return;
+  const act = event.target.closest("[data-spread-act]");
+  if (act) {
+    runSpreadAction(ctx, act.dataset.spreadAct);
+    return;
+  }
+  const card = event.target.closest(".spread-card");
+  if (!card) return;
+  ui.spreadPick = card.dataset.cardId || null;
+  renderSpread(ctx);
+}
+
+function runSpreadAction(ctx, act) {
+  const cardId = ui.spreadPick;
+  const view = ctx.view;
+  const me = view?.players?.find((p) => p.id === view.yourId);
+  if (act === "play" && cardId) {
+    ui.selected = null;
+    closeSpread();
+    ctx.onAction({ type: "play", cardId });
+    return;
+  }
+  if (act === "aim" && cardId) {
+    ui.selected = cardId;
+    ui.picker = null;
+    closeSpread();
+    mount(document.querySelector("#app"), ctx);
+    return;
+  }
+  if (act === "respond" && cardId) {
+    const choice = view?.prompt?.kind === "save" ? "beer" : "card";
+    closeSpread();
+    ctx.onAction({ type: "respond", choice, cardId });
+    return;
+  }
+  if (act === "discard-toggle" && cardId) {
+    if (ui.discard.has(cardId)) ui.discard.delete(cardId);
+    else if (ui.discard.size < (view?.prompt?.count || 0)) ui.discard.add(cardId);
+    renderSpread(ctx);
+    return;
+  }
+  if (act === "discard-go") {
+    ctx.onAction({ type: "discard", cardIds: [...ui.discard] });
+    ui.discard = new Set();
+    closeSpread();
+    return;
+  }
+  if (act === "sid-toggle" && cardId) {
+    if (ui.sid.has(cardId)) ui.sid.delete(cardId);
+    else if (ui.sid.size < 2) ui.sid.add(cardId);
+    renderSpread(ctx);
+    return;
+  }
+  if (act === "sid-go") {
+    ctx.onAction({ type: "sid", cardIds: [...ui.sid] });
+    ui.sidMode = false;
+    ui.sid = new Set();
+    closeSpread();
+  }
+}
+
+function spreadHandActions(ctx, cardId) {
+  const view = ctx.view;
+  const me = view.players.find((p) => p.id === view.yourId);
+  const card = me?.hand?.find((c) => c.id === cardId);
+  const prompt = view.prompt;
+  if (!card) return "";
+  if (prompt?.mine && prompt.kind === "discard") {
+    const on = ui.discard.has(cardId);
+    const ready = ui.discard.size === prompt.count;
+    return `<button type="button" class="bar-btn" data-spread-act="discard-toggle">${on ? "선택 해제" : "버리기"}</button>
+      <button type="button" class="bar-btn" data-spread-act="discard-go" ${ready ? "" : "disabled"}>버리기 (${ui.discard.size}/${prompt.count})</button>`;
+  }
+  if (ui.sidMode) {
+    const on = ui.sid.has(cardId);
+    return `<button type="button" class="bar-btn" data-spread-act="sid-toggle">${on ? "선택 해제" : "선택"}</button>
+      <button type="button" class="bar-btn" data-spread-act="sid-go" ${ui.sid.size === 2 ? "" : "disabled"}>사용</button>`;
+  }
+  if (prompt?.mine && responseKind(view, me, card)) {
+    return `<button type="button" class="bar-btn" data-spread-act="respond">사용</button>`;
+  }
+  const info = view.handInfo?.find((h) => h.cardId === cardId);
+  if (!info) return `<p class="spread-note">지금은 그 카드를 낼 수 없습니다.</p>`;
+  if (!info.ok) return `<p class="spread-note">${esc(info.reason || "지금은 그 카드를 낼 수 없습니다.")}</p>`;
+  if (info.needsTarget) return `<button type="button" class="bar-btn" data-spread-act="aim">대상 선택</button>`;
+  return `<button type="button" class="bar-btn" data-spread-act="play">내기</button>`;
+}
+
+function spreadSeatHtml(p, view) {
+  const cards = [];
+  if (p.role && (p.id === view.yourId || p.role === "sheriff" || view.phase === "end")) {
+    const role = ROLES[p.role];
+    if (role) cards.push(`<button type="button" class="card" data-card-id="role-${esc(p.id)}"><img src="${role.image}" alt="${esc(role.ko)}" draggable="false" /></button>`);
+  } else cards.push(backCard("역할", `data-card-id="role-${esc(p.id)}"`));
+  const ch = characterById(p.character);
+  if (ch) cards.push(`<button type="button" class="card" data-card-id="${esc(ch.id)}"><img src="${ch.image}" alt="${esc(ch.name)}" draggable="false" /></button>`);
+  for (const piece of equipPieces(p)) if (piece) cards.push(piece);
+  return cards.filter(Boolean);
+}
+
+function renderSpread(ctx) {
+  const layer = document.querySelector("#zoom-layer");
+  if (!layer) return;
+  const view = ctx?.view;
+  if (!ui.spread || !view || (view.phase !== "play" && view.phase !== "end")) {
+    if (ui.spread && view && view.phase !== "play" && view.phase !== "end") ui.spread = null;
     layer.hidden = true;
-    layer.replaceChildren();
-    setTimeout(() => { eatingClick = false; }, 40);
-  }, 430);
+    layer.innerHTML = "";
+    return;
+  }
+  let title = "카드";
+  let cards = [];
+  let actions = "";
+  if (ui.spread.kind === "hand") {
+    const me = view.players.find((p) => p.id === view.yourId);
+    const hand = me?.hand || [];
+    if (!hand.length) {
+      ui.spread = null;
+      layer.hidden = true;
+      layer.innerHTML = "";
+      return;
+    }
+    if (ui.spreadPick && !hand.some((c) => c.id === ui.spreadPick)) ui.spreadPick = null;
+    title = "손패";
+    cards = hand.map((card) => cardArt(card, `data-spread-card="1"`));
+    if (ui.spreadPick) actions = spreadHandActions(ctx, ui.spreadPick);
+  } else {
+    const p = view.players.find((pl) => pl.id === ui.spread.playerId);
+    if (!p) {
+      ui.spread = null;
+      layer.hidden = true;
+      layer.innerHTML = "";
+      return;
+    }
+    title = p.nickname;
+    cards = spreadSeatHtml(p, view);
+  }
+  const picked = ui.spreadPick;
+  layer.hidden = false;
+  layer.innerHTML = `<div class="spread-sheet" data-spread-kind="${esc(ui.spread.kind)}">
+    <div class="spread-top">
+      <p>${esc(title)}</p>
+      <button type="button" class="text-btn" data-spread-close>닫기</button>
+    </div>
+    <div class="spread-scroller">
+      ${cards.map((html) => {
+        const id = html.match(/data-card-id="([^"]+)"/)?.[1] || "";
+        const on = picked && id === picked;
+        return `<div class="spread-card${on ? " is-current" : ""}" data-card-id="${esc(id)}">${html}</div>`;
+      }).join("")}
+    </div>
+    <div class="spread-actions">${actions}</div>
+  </div>`;
+  if (picked) {
+    layer.querySelector(".spread-card.is-current")?.scrollIntoView({ inline: "center", block: "nearest" });
+  }
 }
