@@ -1,9 +1,9 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=30";
-import { naturalKorean } from "./engine.js?v=30";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=30";
-import { solveProjectedLayout } from "./layout.js?v=30";
-import { mountTable } from "./table3d.js?v=30";
-import { stampURL } from "./stamp.js?v=30";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=31";
+import { naturalKorean } from "./engine.js?v=31";
+import { applyEffects, captureBefore } from "./motion.js?v=31";
+import { solveProjectedLayout } from "./layout.js?v=31";
+import { mountTable } from "./table3d.js?v=31";
+import { stampURL } from "./stamp.js?v=31";
 
 const ui = {
   selected: null,
@@ -144,9 +144,6 @@ function paint(app, ctx) {
   syncReveal(view);
 }
 
-function soundButtonHtml() {
-  return `<button type="button" class="sound-toggle" data-action="sound-toggle" aria-label="효과음 ${isSoundOn() ? "끄기" : "켜기"}" aria-pressed="${isSoundOn()}">${isSoundOn() ? "소리 켜짐" : "소리 꺼짐"}</button>`;
-}
 function screenHtml(ctx) {
   if (!ctx.view) return ctx.status?.mode === "entry" || !ctx.status ? entryHtml(ctx) : waitHtml(ctx);
   if (ctx.view.phase === "lobby") return lobbyHtml(ctx);
@@ -195,7 +192,6 @@ function lobbyHtml(ctx) {
     <header class="topbar">
       <div class="brand-mini">BANG!</div>
       <p>${esc(ctx.status?.text || "")}</p>
-      ${soundButtonHtml()}
        <button type="button" data-action="help">도움말</button>
     </header>
     <section class="lobby">
@@ -231,7 +227,6 @@ function selectHtml(ctx) {
     <header class="topbar">
       <div class="brand-mini">BANG!</div>
       <p>${me?.role ? ROLES[me.role].ko : "역할 확인"} · 인물을 고르세요</p>
-      ${soundButtonHtml()}
        <button type="button" data-action="help">도움말</button>
     </header>
     <section class="choose">
@@ -276,7 +271,6 @@ function tableHtml(ctx) {
       <header class="topbar">
         <div class="brand-mini">BANG!</div>
         <p>${esc(phaseLine(view, current))}</p>
-        ${soundButtonHtml()}
         <button type="button" data-action="reset-view">시점</button>
         ${view.yourId === view.hostId ? `<button type="button" data-action="pause">일시정지</button><button type="button" data-action="resume">재개</button><button type="button" data-action="fresh">종료</button>` : ""}
        <button type="button" data-action="help">도움말</button>
@@ -714,11 +708,6 @@ function onSubmit(event, app) {
 function onClick(event, app) {
   const ctx = app.__ctx;
   const view = ctx.view;
-  if (event.target.closest("[data-action=sound-toggle]")) {
-    toggleSound();
-    mount(app, ctx);
-    return;
-  }
   if (event.target.closest("[data-action=reset-view]")) {
     ui.gl?.resetView?.();
     closePeek();
@@ -1166,7 +1155,7 @@ function syncTable(app, view) {
       ui.gl.setZoom?.((info) => {
         const ctx = app.__ctx;
         const view = ctx?.view;
-        if (ui.selected && info?.kind === "character" && info.playerId) {
+        if (ui.selected && info?.playerId && (info.kind === "character" || info.kind === "gear" || info.kind === "role")) {
           const cardInfo = view?.handInfo?.find((item) => item.cardId === ui.selected);
           const allowed = cardInfo?.targets?.some((target) => target.id === info.playerId);
           if (allowed) playAt(ctx, ui.selected, info.playerId);
@@ -1180,12 +1169,8 @@ function syncTable(app, view) {
           ctx.onAction({ type: "draw" });
           return;
         }
-        if (info?.kind === "hand" && info.secret) {
-          openCardZoom("", info.box, { backs: 1, caption: `${info.handCount || 0}장` });
-          return;
-        }
-        if (info?.kind === "hand" && info.handId) {
-          openCardZoom(info.image, info.box, { handId: info.handId, suit: info.suit, rank: info.rank });
+        if (info?.kind === "hand" || info?.kind === "character" || info?.kind === "gear" || info?.kind === "role") {
+          openBundle(info.kind === "hand" ? "hand" : "field", info.playerId);
           return;
         }
         if (info?.image && info.box) openCardZoom(info.image, info.box, info);
@@ -1276,6 +1261,8 @@ function placeFelt(felt, view, projected, webgl) {
       x = labelOverlaps({ left: first, top: mid, right: first + w, bottom: mid + h }, blockers) ? second : first;
       y = mid;
     }
+    x = Math.max(4, Math.min(window.innerWidth - w - 4, x));
+    y = Math.max(52, Math.min(window.innerHeight - h - 6, y));
     label.style.position = "fixed";
     label.style.left = `${x}px`;
     label.style.top = `${y}px`;
@@ -1330,6 +1317,97 @@ function confirmPanelCard(ctx, view, card) {
   if (card.hasAttribute("data-store-card") || card.hasAttribute("data-pick-card")) {
     ctx.onAction({ type: "respond", cardId: card.dataset.cardId });
   }
+}
+
+function openBundle(kind, playerId) {
+  const view = document.querySelector("#app")?.__ctx?.view;
+  const player = view?.players?.find((p) => p.id === playerId);
+  if (!view || !player) return;
+  ui.bundle = { kind, playerId };
+  paintBundle(view, player);
+}
+
+function closeBundle() {
+  ui.bundle = null;
+  document.querySelector("#bundle")?.remove();
+}
+
+function paintBundle(view, player) {
+  let layer = document.querySelector("#bundle");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "bundle";
+    document.body.appendChild(layer);
+    layer.addEventListener("click", (event) => {
+      if (event.target === layer || event.target.closest("[data-bundle-close]")) closeBundle();
+    });
+    layer.addEventListener("pointerdown", (event) => {
+      const card = event.target.closest(".bundle-fan .card");
+      if (!card || event.button > 0) return;
+      ui.bundleTap = { id: event.pointerId, x: event.clientX, y: event.clientY, card };
+    });
+    layer.addEventListener("pointerup", onBundlePointerUp);
+  }
+  const mine = player.id === view.yourId;
+  const hand = ui.bundle.kind === "hand";
+  let cards = "";
+  let title = "";
+  if (hand) {
+    title = mine ? "내 손패" : `${player.nickname}의 손패 · ${player.handCount || 0}장`;
+    cards = mine
+      ? (player.hand || []).map((card, index) => cardArt(card, `style="--tilt:${(index - ((player.hand.length - 1) / 2)) * 4}deg"`)).join("")
+      : Array.from({ length: Math.min(player.handCount || 0, 8) }, (_, index) => {
+        const n = Math.min(player.handCount || 0, 8);
+        return backCard("", `data-bundle-back="1" data-hand-count="${player.handCount || 0}" style="--tilt:${(index - (n - 1) / 2) * 4}deg"`);
+      }).join("");
+  } else {
+    title = `${player.nickname}의 카드`;
+    const pieces = [];
+    const ch = characterById(player.character);
+    if (ch) pieces.push(`<button type="button" class="card" data-bundle-card="character"><img src="${ch.image}" alt="${esc(ch.name)}" draggable="false" /></button>`);
+    if (player.role && ROLES[player.role]) pieces.push(`<button type="button" class="card" data-bundle-card="role"><img src="${ROLES[player.role].image}" alt="" draggable="false" /></button>`);
+    else pieces.push(backCard("역할", `data-bundle-back="1"`));
+    for (const card of [player.equipment?.weapon, player.equipment?.barrel, player.equipment?.mustang, player.equipment?.scope, player.equipment?.jail, player.equipment?.dynamite]) {
+      if (card) pieces.push(cardArt(card));
+    }
+    cards = pieces.map((html, index) => html.replace("style=\"", `style="--tilt:${(index - (pieces.length - 1) / 2) * 4}deg;`)).join("");
+    if (!pieces.some((html) => html.includes("style="))) {
+      cards = pieces.map((html, index) => html.replace("<button", `<button style="--tilt:${(index - (pieces.length - 1) / 2) * 4}deg"`)).join("");
+    }
+  }
+  layer.innerHTML = `<p class="bundle-title">${esc(title)}</p><div class="bundle-fan">${cards}</div><button type="button" class="bar-btn" data-bundle-close>닫기</button>`;
+}
+
+function onBundlePointerUp(event) {
+  const tap = ui.bundleTap;
+  if (!tap || tap.id !== event.pointerId) return;
+  ui.bundleTap = null;
+  const dx = event.clientX - tap.x;
+  const dy = event.clientY - tap.y;
+  const card = tap.card;
+  const ctx = document.querySelector("#app")?.__ctx;
+  if (dy < -42 && Math.abs(dy) > Math.abs(dx) && card.dataset.cardId && ctx) {
+    const info = ctx.view?.handInfo?.find((item) => item.cardId === card.dataset.cardId);
+    closeBundle();
+    if (info?.ok && info.needsTarget) {
+      ui.selected = card.dataset.cardId;
+      mount(document.querySelector("#app"), ctx);
+    } else if (info?.ok) ctx.onAction({ type: "play", cardId: card.dataset.cardId });
+    return;
+  }
+  if (Math.hypot(dx, dy) > 14) return;
+  const from = card.getBoundingClientRect();
+  if (card.classList.contains("card-back") || card.dataset.bundleBack) {
+    openCardZoom("", from, { backs: 1, caption: card.dataset.handCount ? `${card.dataset.handCount}장` : "" });
+    return;
+  }
+  const img = card.querySelector("img");
+  if (!img) return;
+  openCardZoom(img.getAttribute("src"), from, card.dataset.cardId ? {
+    handId: card.dataset.cardId,
+    suit: card.dataset.suit || "",
+    rank: card.dataset.rank || "",
+  } : {});
 }
 
 function openCardZoom(src, from, extra = {}) {

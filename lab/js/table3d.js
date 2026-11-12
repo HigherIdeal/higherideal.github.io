@@ -1,7 +1,7 @@
-import * as THREE from "../vendor/three.module.js?v=30";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=30";
-import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=30";
-import { stampCanvas } from "./stamp.js?v=30";
+import * as THREE from "../vendor/three.module.js?v=31";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=31";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=31";
+import { stampCanvas } from "./stamp.js?v=31";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -333,10 +333,9 @@ export function mountTable(canvas) {
       const character = characterById(player.character);
       const role = player.role && ROLES[player.role];
       put(zone("character"), loadTexture(character?.image, textures) || back, player.id, mode);
-      put(zone("role"), role ? loadTexture(role.image, textures) : back, player.id, mode);
-      if (player.id !== mine) placeHandFan(player, zone("character"));
-      placeGear(player, zone("gear"), mode, player.id === mine ? zone("character") : null);
       const anchor = zone("character");
+      placeFieldStack(player, anchor, mode, role);
+      placeHandStack(player, anchor, player.id === mine);
       if (anchor?.world && reach) {
         const pool = new THREE.PointLight(0xffc48a, 0.28, 1.25, 2);
         pool.position.set(anchor.world.x, 0.22, anchor.world.z);
@@ -374,39 +373,85 @@ export function mountTable(canvas) {
     groups.__order = ordered.map((player) => player.id);
   }
 
-  function placeHandFan(player, anchor) {
-    const count = player.handCount || 0;
-    const shown = Math.min(count, 10);
-    if (!shown || !anchor?.world) return;
+  function pileAxes(anchor) {
     const span = Math.hypot(anchor.world.x, anchor.world.z) || 1;
-    const inX = -anchor.world.x / span;
-    const inZ = -anchor.world.z / span;
-    const rightX = -inZ;
-    const rightZ = inX;
-    const cardW = anchor.world.w * 0.42;
-    const cardD = anchor.world.d * 0.42;
-    const step = cardW * (shown > 6 ? 0.26 : 0.38);
-    const inward = anchor.world.d * 0.72;
+    return {
+      inX: -anchor.world.x / span,
+      inZ: -anchor.world.z / span,
+      rightX: anchor.world.z / span,
+      rightZ: -anchor.world.x / span,
+    };
+  }
+
+  function placePileCard(anchor, texture, index, total, opts) {
+    const axes = pileAxes(anchor);
+    const cardW = anchor.world.w * (opts.scale || 0.86);
+    const cardD = anchor.world.d * (opts.scale || 0.86);
+    const mesh = cardMesh(texture, cardW, cardD, opts.mode || "self");
+    const step = cardW * 0.16;
+    const along = (index - (total - 1) / 2) * step;
+    mesh.position.set(
+      anchor.world.x + axes.inX * (opts.inward || 0) + axes.rightX * along,
+      (opts.y || 0.05) + index * 0.012,
+      anchor.world.z + axes.inZ * (opts.inward || 0) + axes.rightZ * along,
+    );
+    mesh.rotation.order = "YXZ";
+    mesh.rotation.y = cardYaw(anchor.world.x, anchor.world.z);
+    mesh.rotation.x = -Math.PI / 2;
+    Object.assign(mesh.userData, opts.data || {});
+    mesh.userData.image = texture?.userData?.url || texture?.image?.src || mesh.userData.image || "";
+    mesh.userData.baseY = mesh.position.y;
+    scene.add(mesh);
+    groups.set(opts.id, mesh);
+  }
+
+  function placeFieldStack(player, anchor, mode, role) {
+    if (!anchor?.world) return;
+    const gear = [player.equipment?.weapon, player.equipment?.barrel, player.equipment?.mustang, player.equipment?.scope, player.equipment?.jail, player.equipment?.dynamite].filter(Boolean);
+    const roleTexture = role ? loadTexture(role.image, textures) : back;
+    const cards = [{ texture: roleTexture, kind: "role" }, ...gear.map((card) => ({ texture: loadPlayCard(card, textures), kind: "gear", card }))].filter((item) => item.texture);
+    cards.forEach((item, index) => {
+      placePileCard(anchor, item.texture, index, cards.length, {
+        scale: 0.9,
+        y: 0.045,
+        mode,
+        id: `field-${player.id}-${index}`,
+        data: {
+          kind: item.kind,
+          gear: item.kind === "gear",
+          playerId: player.id,
+          suit: item.card?.suit || "",
+          rank: item.card?.rank || "",
+          cardType: item.card?.type || "",
+        },
+      });
+    });
+  }
+
+  function placeHandStack(player, anchor, mine) {
+    if (!anchor?.world) return;
+    const owned = mine ? (player.hand || []) : [];
+    const count = mine ? owned.length : (player.handCount || 0);
+    const shown = Math.min(count, 8);
+    if (!shown) return;
     for (let i = 0; i < shown; i += 1) {
-      const mesh = cardMesh(back, cardW, cardD, "self");
-      const along = (i - (shown - 1) / 2) * step;
-      mesh.position.set(
-        anchor.world.x + inX * inward + rightX * along,
-        0.14 + i * 0.008,
-        anchor.world.z + inZ * inward + rightZ * along,
-      );
-      mesh.rotation.order = "YXZ";
-      mesh.rotation.y = cardYaw(anchor.world.x, anchor.world.z) + (i - (shown - 1) / 2) * 0.14;
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.userData.kind = "hand";
-      mesh.userData.image = back.userData?.url || back.image?.src || "";
-      mesh.userData.playerId = player.id;
-      mesh.userData.secret = true;
-      mesh.userData.handCount = count;
-      mesh.userData.handId = "";
-      mesh.userData.baseY = mesh.position.y;
-      scene.add(mesh);
-      groups.set(`hand-${player.id}-${i}`, mesh);
+      const card = owned[i];
+      const texture = card ? (loadPlayCard(card, textures) || back) : back;
+      placePileCard(anchor, texture, i, shown, {
+        scale: 0.78,
+        inward: anchor.world.d * 0.28,
+        y: 0.16,
+        id: `hand-${player.id}-${i}`,
+        data: {
+          kind: "hand",
+          playerId: player.id,
+          secret: !mine,
+          handCount: count,
+          handId: card?.id || "",
+          suit: mine ? (card?.suit || "") : "",
+          rank: mine ? (card?.rank || "") : "",
+        },
+      });
     }
   }
 
