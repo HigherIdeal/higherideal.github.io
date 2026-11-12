@@ -1,7 +1,8 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=13";
-import { naturalKorean } from "./engine.js?v=13";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=13";
-import { mountTable } from "./table3d.js?v=13";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=14";
+import { naturalKorean } from "./engine.js?v=14";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=14";
+import { solveTableLayout } from "./layout.js?v=14";
+import { mountTable } from "./table3d.js?v=14";
 
 const ui = {
   selected: null,
@@ -37,20 +38,37 @@ function backCard(label, attrs = "") {
 }
 
 export function mount(app, ctx) {
-  const previousView = app.__ctx?.view || null;
-  const previousFrame = captureBefore(app, previousView);
-  const log = app.querySelector("#log");
-  const stick = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 28;
-  const input = app.querySelector("#chat-input");
-  if (input) ui.chat = input.value;
-  app.innerHTML = screenHtml(ctx);
-  const nextLog = app.querySelector("#log");
-  if (nextLog && stick) nextLog.scrollTop = nextLog.scrollHeight;
-  const nextInput = app.querySelector("#chat-input");
-  if (nextInput) {
-    nextInput.value = ui.chat;
-    if (input && document.activeElement === input) nextInput.focus();
+  app.__ctx = ctx;
+  if (ui.pointerDown) {
+    ui.pendingCtx = ctx;
+    return;
   }
+  paint(app, ctx);
+}
+
+function paint(app, ctx) {
+  const previousView = ui.paintedView || null;
+  const html = screenHtml(ctx);
+  const same = ui.lastHtml === html && app.childElementCount > 0;
+  if (!same) {
+    const previousFrame = captureBefore(app, previousView);
+    const log = app.querySelector("#log");
+    const stick = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 28;
+    const input = app.querySelector("#chat-input");
+    const typing = input && document.activeElement === input;
+    if (input) ui.chat = input.value;
+    app.innerHTML = html;
+    ui.lastHtml = html;
+    const nextLog = app.querySelector("#log");
+    if (nextLog && stick) nextLog.scrollTop = nextLog.scrollHeight;
+    const nextInput = app.querySelector("#chat-input");
+    if (nextInput) {
+      nextInput.value = ui.chat;
+      if (typing) nextInput.focus();
+    }
+    applyEffects(app, previousView, ctx.view, previousFrame);
+  }
+  ui.paintedView = ctx.view;
   const view = ctx.view;
   app.dataset.screen = view?.phase || (ctx.status?.mode === "entry" ? "entry" : "wait");
   app.dataset.status = ctx.status?.mode || "";
@@ -61,15 +79,25 @@ export function mount(app, ctx) {
   app.dataset.host = view && view.yourId === view.hostId ? "1" : "0";
   if (!ui.wired) {
     ui.wired = true;
+    app.addEventListener("pointerdown", () => { ui.pointerDown = true; }, true);
+    const release = () => {
+      ui.pointerDown = false;
+      setTimeout(() => {
+        if (ui.pointerDown || !ui.pendingCtx) return;
+        const next = ui.pendingCtx;
+        ui.pendingCtx = null;
+        paint(app, next);
+      }, 0);
+    };
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
     app.addEventListener("click", (event) => onClick(event, app));
     app.addEventListener("submit", (event) => onSubmit(event, app));
     wireSpread();
     wireFan();
   }
-  app.__ctx = ctx;
   renderSpread(ctx);
   syncTable(app, view);
-  applyEffects(app, previousView, view, previousFrame);
 }
 
 function soundButtonHtml() {
@@ -208,20 +236,22 @@ function tableHtml(ctx) {
        <button type="button" data-action="help">도움말</button>
       </header>
       <div class="board">
+      <div class="felt">
       ${aroundHtml(ring.filter((p) => p.id !== view.yourId), view)}
-      <div class="center-piles">
+      <div class="center-piles" data-discard-pile="1">
         ${view.deckCount ? backCard(String(view.deckCount), `data-card-id="deck" aria-label="덱 ${view.deckCount}장"`) : ""}
         ${view.discardTop ? cardArt(view.discardTop, `data-discard-top="1"`) : ""}
         ${storeHtml(view)}
         ${promptCardsHtml(view)}
       </div>
-      <div class="mine">
-        ${deadHtml(view)}
-        ${me?.alive ? selfTray(me, view) : ""}
+      ${deadHtml(view)}
+      ${me?.alive ? selfTray(me, view) : ""}
+      ${ended ? endHtml(view) : ""}
+      </div>
+      <div class="hand-dock">
         ${me?.alive && view.phase === "play" ? handHtml(view, me) : ""}
         ${actionBar(view, me)}
       </div>
-      ${ended ? endHtml(view) : ""}
       </div>
     </section>
     ${dockHtml(ctx)}
@@ -280,15 +310,17 @@ function seatHtml(p, view) {
   const reachable = Boolean(me?.alive && p.alive && p.distance != null && p.distance <= range);
   const distanceClass = view.phase !== "play" || !me?.alive ? "" : (selected || reachable ? "is-reachable" : "is-distant");
   const activeTurn = p.id === view.currentId ? "is-turn" : "";
-  return `<article class="seat ${selected ? "is-target" : ""} ${offline ? "is-offline" : ""} ${distanceClass} ${activeTurn}" data-player="${esc(p.id)}" data-presence="${offline ? "off" : "on"}" ${selected ? `data-legal-target="1"` : ""}>
+  return `<div class="seat ${selected ? "is-target" : ""} ${offline ? "is-offline" : ""} ${distanceClass} ${activeTurn}" data-player="${esc(p.id)}" data-presence="${offline ? "off" : "on"}">
     ${stackHtml(`seat-${p.id}`, seatCards(p, view))}
-    <p class="who">
-      <strong>${esc(p.nickname)}</strong>
-      ${presenceHtml(p)}
-      <span class="life" data-hp="${p.hp}" data-max-hp="${p.maxHp}">${p.hp}/${p.maxHp}</span>
-      <span class="hand-count" title="손패" aria-label="손패 ${p.handCount}장">${p.handCount}</span>
-    </p>
-  </article>`;
+    <button type="button" class="seat-btn" data-player="${esc(p.id)}" ${selected ? `data-legal-target="1"` : ""} aria-label="${esc(p.nickname)}, 생명 ${p.hp}/${p.maxHp}">
+      <span class="who">
+        <strong>${esc(p.nickname)}</strong>
+        ${presenceHtml(p)}
+        <span class="life" data-hp="${p.hp}" data-max-hp="${p.maxHp}">${p.hp}/${p.maxHp}</span>
+        <span class="hand-count" title="손패" aria-label="손패 ${p.handCount}장">${p.handCount}</span>
+      </span>
+    </button>
+  </div>`;
 }
 
 function roleFace(p, view) {
@@ -332,13 +364,15 @@ function bullets(hp, max) {
 
 function selfTray(p, view) {
   const selected = isTarget(view, p.id);
-  return `<div class="self-tray ${selected ? "is-target" : ""} ${p.id === view.currentId ? "is-turn" : ""}" data-player="${esc(p.id)}" ${selected ? 'data-legal-target="1"' : ""}>
+  return `<div class="self-tray ${selected ? "is-target" : ""} ${p.id === view.currentId ? "is-turn" : ""}" data-player="${esc(p.id)}">
     ${stackHtml("self", seatCards(p, view))}
-    <p class="who">
-      <strong>${esc(p.nickname)}</strong>
-      ${presenceHtml(p)}
-      <span class="life" data-hp="${p.hp}" data-max-hp="${p.maxHp}">${p.hp}/${p.maxHp}</span>
-    </p>
+    <button type="button" class="seat-btn" data-player="${esc(p.id)}" ${selected ? 'data-legal-target="1"' : ""} aria-label="${esc(p.nickname)}, 생명 ${p.hp}/${p.maxHp}">
+      <span class="who">
+        <strong>${esc(p.nickname)}</strong>
+        ${presenceHtml(p)}
+        <span class="life" data-hp="${p.hp}" data-max-hp="${p.maxHp}">${p.hp}/${p.maxHp}</span>
+      </span>
+    </button>
   </div>`;
 }
 
@@ -393,7 +427,7 @@ function actionBar(view, me) {
     if (me.character === "sid" && (me.hand || []).length >= 2) bits.push(`<button type="button" class="bar-btn" data-action="sid-mode">카드 2장으로 버티기</button>`);
   }
   if (prompt?.mine && prompt.kind === "discard") {
-    bits.push(`<button type="button" class="bar-btn" data-action="discard" ${ui.discard.size === prompt.count ? "" : "disabled"}>버리기 (${ui.discard.size}/${prompt.count})</button>`);
+    bits.push(`<button type="button" class="bar-btn" data-action="discard">버리기 (${ui.discard.size}/${prompt.count})</button>`);
   }
   if (prompt?.mine && prompt.kind === "jesse") {
     bits.push(`<button type="button" class="bar-btn" data-draw="deck">덱에서</button>`);
@@ -606,6 +640,11 @@ function onClick(event, app) {
     return;
   }
   if (event.target.closest("[data-action=discard]")) {
+    const need = view?.prompt?.count || 0;
+    if (ui.discard.size !== need) {
+      ctx.onToast?.(`${need}장을 고른 다음 버리세요.`);
+      return;
+    }
     ctx.onAction({ type: "discard", cardIds: [...ui.discard] });
     ui.discard = new Set();
     return;
@@ -622,12 +661,22 @@ function onClick(event, app) {
     ui.sid = new Set();
     return;
   }
-  const seat = event.target.closest("[data-legal-target]");
-  if (seat && ui.selected && !event.target.closest(".card")) {
-    playAt(ctx, ui.selected, seat.dataset.player);
+  const seatBtn = event.target.closest(".seat-btn");
+  if (seatBtn) {
+    const id = seatBtn.dataset.player;
+    if (ui.selected && id && isTarget(view, id)) {
+      playAt(ctx, ui.selected, id);
+      return;
+    }
+    if (id && id !== view?.yourId) {
+      ui.spread = { kind: "seat", playerId: id };
+      ui.spreadPick = null;
+      renderSpread(ctx);
+    }
     return;
   }
-  if (seat && ui.selected && event.target.closest(".card") && !event.target.closest("[data-hand-card]") && !event.target.closest("[data-self-role]")) {
+  const seat = event.target.closest("[data-player]");
+  if (seat && ui.selected && isTarget(view, seat.dataset.player) && !event.target.closest("[data-hand-card]")) {
     playAt(ctx, ui.selected, seat.dataset.player);
     return;
   }
@@ -906,27 +955,87 @@ function renderSpread(ctx) {
 
 function syncTable(app, view) {
   const board = app.querySelector(".board");
-  if (!board || !view || (view.phase !== "play" && view.phase !== "end")) return;
-  let canvas = board.querySelector("#table-gl");
+  const felt = board?.querySelector(".felt");
+  if (!board || !felt || !view || (view.phase !== "play" && view.phase !== "end")) return;
+  let canvas = felt.querySelector("#table-gl");
   if (!canvas) {
     canvas = document.createElement("canvas");
     canvas.id = "table-gl";
-    board.prepend(canvas);
+    felt.prepend(canvas);
     canvas.addEventListener("pointerdown", (event) => {
       const ctx = app.__ctx;
-      if (!ui.gl || !ctx?.view || !ui.selected) return;
+      if (!ui.gl?.pick || !ctx?.view || !ui.selected) return;
       const id = ui.gl.pick(event.clientX, event.clientY);
       if (id && isTarget(ctx.view, id)) playAt(ctx, ui.selected, id);
     });
   }
-  if (!ui.gl) {
-    ui.gl = mountTable(canvas);
-    if (ui.gl) board.classList.add("is-webgl");
+  if (ui.gl !== false && (!ui.gl || ui.glCanvas !== canvas)) {
+    ui.gl?.stop?.();
+    const mounted = mountTable(canvas);
+    if (mounted?.update) {
+      ui.gl = mounted;
+      ui.glCanvas = canvas;
+      if (app.dataset.renderer !== "webgl") console.info("[bang] renderer", "webgl");
+      app.dataset.renderer = "webgl";
+    } else {
+      ui.gl = false;
+      ui.glCanvas = null;
+      if (app.dataset.renderer !== "2d") console.info("[bang] renderer", "2d", mounted?.error || "webgl unavailable");
+      app.dataset.renderer = "2d";
+    }
   }
-  if (!ui.gl) return;
+  const webgl = Boolean(ui.gl && ui.gl.update);
+  board.classList.toggle("is-webgl", webgl);
+  board.classList.toggle("is-flat3d", !webgl);
   board.classList.toggle("is-aiming", Boolean(ui.selected));
-  const legal = ui.selected ? view.players.filter((p) => isTarget(view, p.id)).map((p) => p.id) : [];
-  ui.gl.update(view, legal);
+  let projected = null;
+  if (webgl) {
+    const legal = ui.selected ? view.players.filter((p) => isTarget(view, p.id)).map((p) => p.id) : [];
+    projected = ui.gl.update(view, legal);
+  }
+  placeFelt(felt, view, projected, webgl);
+}
+
+function placeFelt(felt, view, projected, webgl) {
+  const living = view.players.filter((p) => p.alive !== false);
+  const me = living.find((p) => p.id === view.yourId);
+  const ordered = me ? [me, ...living.filter((p) => p.id !== me.id)] : living;
+  const layout = solveTableLayout(ordered.length);
+  const width = Math.max(felt.clientWidth, 1);
+  ordered.forEach((player, index) => {
+    const node = felt.querySelector(player.id === view.yourId ? ".self-tray" : `.seat[data-player="${player.id}"]`);
+    if (!node) return;
+    if (webgl && projected) {
+      const spot = projected.find((item) => item.id === player.id);
+      if (!spot) return;
+      const zone = layout.zones.find((item) => item.id === `seat-${index}`);
+      const seatW = Math.max(180, Math.min(width * 0.22, 340));
+      const seatH = Math.min(seatW * 1.05, felt.clientHeight * 0.42);
+      const top = Math.max(8, Math.min(spot.y - seatH * 0.35, felt.clientHeight - seatH - 8));
+      node.style.left = `${spot.x - seatW / 2}px`;
+      node.style.top = `${top}px`;
+      node.style.width = `${seatW}px`;
+      node.style.height = `${seatH}px`;
+      node.style.transform = "none";
+      return;
+    }
+    const zone = layout.zones.find((item) => item.id === `seat-${index}`);
+    if (!zone) return;
+    node.style.left = `${zone.x * 100}%`;
+    node.style.top = `${zone.y * 100}%`;
+    node.style.width = `${zone.w * 100}%`;
+    const depth = (0.5 - (zone.y + zone.h / 2)) * 260;
+    node.style.transform = `translateZ(${depth}px)`;
+  });
+  const piles = felt.querySelector(".center-piles");
+  const deck = layout.zones.find((zone) => zone.kind === "deck");
+  const discard = layout.zones.find((zone) => zone.kind === "discard");
+  if (piles && deck && discard && !webgl) {
+    piles.style.left = `${deck.x * 100}%`;
+    piles.style.top = `${deck.y * 100}%`;
+    piles.style.width = `${(discard.x + discard.w - deck.x) * 100}%`;
+    piles.style.transform = "translateZ(40px)";
+  }
 }
 
 function wireFan() {
@@ -958,7 +1067,8 @@ function wireFan() {
   window.addEventListener("pointermove", (event) => {
     const fan = ui.fan;
     if (!fan?.holding || event.pointerId !== fan.id) return;
-    fan.target = (event.clientX - fan.originX) / 74;
+    const limit = Math.max(0, fan.cards.length - 1);
+    fan.target = Math.max(-limit, Math.min(0, (fan.originX - event.clientX) / 70));
     fan.lastY = event.clientY;
   });
   window.addEventListener("pointerup", finishFan);
@@ -981,24 +1091,46 @@ function ensureFan() {
   return layer;
 }
 
+function fanBounds() {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const margin = 12;
+  return {
+    left: margin,
+    right: width - margin,
+    top: Math.round(height * 0.46),
+    bottom: height - margin,
+    cx: width / 2,
+  };
+}
+
 function fanFrame() {
   const fan = ui.fan;
   const layer = ensureFan();
   if (!fan) return;
+  const limit = Math.max(0, fan.cards.length - 1);
+  fan.target = Math.max(-limit, Math.min(0, fan.target));
   fan.drag += (fan.target - fan.drag) * 0.3;
-  const focus = Math.max(0, Math.min(fan.cards.length - 1, Math.round(-fan.drag)));
+  const focus = Math.max(0, Math.min(limit, Math.round(-fan.drag)));
   fan.focus = focus;
   ui.spreadPick = fan.cards[focus]?.id || null;
-  const width = window.innerWidth;
-  const height = window.innerHeight;
+  const box = fanBounds();
+  const boxW = box.right - box.left;
+  const cardW = Math.max(78, Math.min(148, (boxW - 24) / Math.max(3, Math.min(fan.cards.length, 6))));
+  const spacing = Math.min(cardW * 0.62, (boxW - cardW) / Math.max(fan.cards.length, 1));
   const ctx = document.querySelector("#app")?.__ctx;
   layer.hidden = false;
   layer.innerHTML = `<div class="fan-stage">${fan.cards.map((card, index) => {
-    const offset = index + fan.drag;
+    const rel = index + fan.drag;
     const centered = index === focus;
-    const x = width / 2 + (offset - (fan.cards.length - 1) / 2) * Math.min(92, width / 5.5);
-    const y = height - (centered ? 280 : 210) + Math.abs(index - focus) * 14;
-    return `<button type="button" class="fan-card${centered ? " is-focus" : ""}" data-card-id="${esc(card.id)}" style="left:${x}px;top:${y}px;transform:translate(-50%,0) scale(${centered ? 1.22 : 0.8})">${cardArt(card).replace(/^<button/, "<span").replace(/<\/button>$/, "</span>")}</button>`;
+    const scale = centered ? 1.08 : 0.82;
+    const cardH = cardW * 1.48 * scale;
+    let x = box.cx + rel * spacing;
+    let y = box.bottom - cardH - (centered ? 28 : 8);
+    const half = (cardW * scale) / 2;
+    x = Math.max(box.left + half, Math.min(box.right - half, x));
+    y = Math.max(box.top, Math.min(box.bottom - cardH, y));
+    return `<button type="button" class="fan-card${centered ? " is-focus" : ""}" data-card-id="${esc(card.id)}" style="left:${x}px;top:${y}px;width:${cardW}px;transform:translate(-50%,0) scale(${scale})">${cardArt(card).replace(/^<button/, "<span").replace(/<\/button>$/, "</span>")}</button>`;
   }).join("")}${fan.holding || !ctx ? "" : `<div class="fan-actions">${spreadHandActions(ctx, ui.spreadPick)}</div>`}</div>`;
   if (fan.holding || Math.abs(fan.target - fan.drag) > 0.03) requestAnimationFrame(fanFrame);
 }
@@ -1007,9 +1139,20 @@ function finishFan(event) {
   const fan = ui.fan;
   if (!fan?.holding || event.pointerId !== fan.id) return;
   const rise = fan.originY - event.clientY;
+  const drop = event.clientY - fan.originY;
   const card = fan.cards[fan.focus];
   fan.holding = false;
   const ctx = document.querySelector("#app")?.__ctx;
+  const prompt = ctx?.view?.prompt;
+  if (prompt?.mine && prompt.kind === "discard" && card && drop > 54) {
+    if (!ui.discard.has(card.id) && ui.discard.size < prompt.count) ui.discard.add(card.id);
+    closeFan();
+    if (ui.discard.size === prompt.count) {
+      ctx.onAction({ type: "discard", cardIds: [...ui.discard] });
+      ui.discard = new Set();
+    } else paint(document.querySelector("#app"), ctx);
+    return;
+  }
   if (rise > 76 && card && ctx) {
     ui.spreadPick = card.id;
     const act = spreadHandActions(ctx, card.id).match(/data-spread-act="([^"]+)"/);
@@ -1017,8 +1160,15 @@ function finishFan(event) {
     if (act) runSpreadAction(ctx, act[1]);
     return;
   }
-  if (event.clientY - fan.originY > 72) {
+  if (drop > 64) {
     closeFan();
+    return;
+  }
+  if (prompt?.mine && prompt.kind === "discard" && card && Math.abs(event.clientX - fan.originX) < 18) {
+    if (ui.discard.has(card.id)) ui.discard.delete(card.id);
+    else if (ui.discard.size < prompt.count) ui.discard.add(card.id);
+    closeFan();
+    paint(document.querySelector("#app"), ctx);
     return;
   }
   fanFrame();

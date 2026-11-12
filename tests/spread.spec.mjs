@@ -34,60 +34,36 @@ try {
     await page.locator("[data-char]").first().tap();
   }
   await host.waitForSelector("[data-hand-card]", { timeout: 25000 });
-  await host.locator(".stack.hand").tap();
-  await host.waitForSelector("#zoom-layer:not([hidden]) .spread-card", { timeout: 5000 });
-  await host.waitForTimeout(450);
-  const still = await host.locator("#zoom-layer").getAttribute("hidden");
-  if (still !== null) throw new Error("spread closed after the finger lifted");
-  const count = await host.locator(".spread-card").count();
-  if (count < 1) throw new Error("spread has no cards");
-  const wide = await host.locator(".spread-scroller").evaluate((el) => ({
-    scroll: el.scrollWidth,
-    view: el.clientWidth,
-    card: el.querySelector(".spread-card")?.getBoundingClientRect().width || 0,
-  }));
-  if (wide.card < 140) throw new Error(`card too small on phone: ${wide.card}`);
-  let acted = false;
-  for (let i = 0; i < count; i += 1) {
-    await host.locator(".spread-card").nth(i).tap();
-    const open = await host.locator("#zoom-layer").getAttribute("hidden");
-    if (open !== null) throw new Error("selecting a card closed the spread");
-    const picked = await host.locator(".spread-card.is-current").count();
-    if (!picked) throw new Error("selected card did not lift");
-    const buttons = await host.locator("[data-spread-act]").allTextContents();
-    if (buttons.length) {
-      acted = true;
-      const labels = buttons.join(" ");
-      if (!/내기|사용|버리기|대상 선택/.test(labels)) throw new Error(`unexpected actions: ${labels}`);
-      break;
-    }
+  const handBox = await host.locator(".stack.hand").boundingBox();
+  await host.mouse.move(handBox.x + handBox.width / 2, handBox.y + handBox.height / 2);
+  await host.mouse.down();
+  await host.mouse.up();
+  await host.waitForSelector("#hand-fan:not([hidden]) .fan-card.is-focus", { timeout: 5000 });
+  const count = await host.locator("#hand-fan .fan-card").count();
+  if (count < 1) throw new Error("fan has no cards");
+  const wide = await host.locator("#hand-fan .fan-card.is-focus").evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { card: r.width, left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+  });
+  const view = host.viewportSize();
+  if (wide.left < -1 || wide.right > view.width + 1 || wide.bottom > view.height + 1) {
+    throw new Error(`fan left the phone viewport ${JSON.stringify(wide)}`);
   }
-  if (!acted) {
-    const note = await host.locator(".spread-note").count();
-    if (!note) throw new Error("no action and no explanation");
-  }
-  const closed = () => host.waitForFunction(() => document.querySelector("#zoom-layer")?.hidden === true);
-  await host.locator("[data-spread-close]").tap();
-  await closed();
-  await host.locator(".stack.hand").tap();
-  await host.waitForSelector(".spread-card");
-  await host.keyboard.press("Escape");
-  await closed();
-  await host.locator(".stack.hand").tap();
-  await host.waitForSelector(".spread-card");
-  await host.locator("#zoom-layer").click({ position: { x: 8, y: 8 } });
-  await closed();
-  await guest.locator(".seat .stack").first().tap();
+  const buttons = await host.locator("#hand-fan [data-spread-act]").allTextContents();
+  const labels = buttons.join(" ");
+  if (labels && !/내기|사용|버리기|대상 선택|낼 수 없습니다/.test(labels)) throw new Error(`unexpected actions: ${labels}`);
+  await host.locator("#hand-fan").click({ position: { x: 8, y: 8 } });
+  await host.waitForFunction(() => document.querySelector("#hand-fan")?.hidden !== false);
+  await guest.locator(".seat-btn").first().tap();
   await guest.waitForSelector("[data-spread-kind=seat] .spread-card");
   const foreignActs = await guest.locator("[data-spread-act]").count();
   if (foreignActs) throw new Error("another player's cards offered an action");
   await guest.screenshot({ path: "/opt/cursor/artifacts/spread_mobile_view.png" });
   await guest.locator("[data-spread-close]").tap();
-  await host.locator(".stack.hand").tap();
-  await host.waitForSelector(".spread-card.is-current, .spread-card");
-  await host.locator(".spread-card").first().tap();
+  await host.mouse.click(handBox.x + 20, handBox.y + 20);
+  await host.waitForSelector("#hand-fan .fan-card");
   await host.screenshot({ path: "/opt/cursor/artifacts/spread_mobile_hand.png" });
-  console.log("SPREAD_TOUCH", room, "cards", count, "cardW", Math.round(wide.card), "scroll", wide.scroll > wide.view);
+  console.log("SPREAD_TOUCH", room, "cards", count, "cardW", Math.round(wide.card));
 } finally {
   await browser.close();
 }

@@ -1,6 +1,6 @@
-import * as THREE from "../vendor/three.module.js?v=13";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=13";
-import { solveTableLayout } from "./layout.js?v=13";
+import * as THREE from "../vendor/three.module.js?v=14";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=14";
+import { solveTableLayout } from "./layout.js?v=14";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -41,18 +41,24 @@ function cardMaterial(texture, fallback) {
 }
 
 export function mountTable(canvas) {
-  let gl;
+  let renderer;
   try {
-    gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-  } catch { gl = null; }
-  if (!gl) return null;
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false,
+      powerPreference: "default",
+    });
+    if (!renderer.getContext()) throw new Error("no webgl context");
+  } catch (error) {
+    return { error: error?.message || "webgl unavailable" };
+  }
   renderer.setClearColor(0x000000, 1);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.045);
+  scene.fog = new THREE.FogExp2(0x000000, 0.02);
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 80);
   const hemi = new THREE.AmbientLight(0xfff4e4, 0.28);
   scene.add(hemi);
@@ -91,6 +97,10 @@ export function mountTable(canvas) {
   let width = 1;
   let height = 1;
 
+  function aspectWide() {
+    return (canvas.clientWidth || 1) / Math.max(1, canvas.clientHeight || 1) > 1.35;
+  }
+
   function resize() {
     const parent = canvas.parentElement;
     if (!parent) return;
@@ -101,13 +111,14 @@ export function mountTable(canvas) {
     renderer.setSize(width, height, false);
     const aspect = width / height;
     camera.aspect = aspect;
-    camera.fov = aspect < 0.85 ? 50 : 44;
-    const fill = Math.min(width, height);
-    const dist = 3.35 * (900 / Math.max(fill, 340));
-    const tilt = 0.82;
+    camera.fov = 42;
+    const tilt = 50 * Math.PI / 180;
+    const radius = aspect > 1.35 ? 5.2 : 4.4;
+    const dist = aspect > 1.35 ? 6.15 : 7.6;
     camera.position.set(0, Math.sin(tilt) * dist, Math.cos(tilt) * dist);
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(0, 0.15, 0);
     camera.updateProjectionMatrix();
+    canvas.__bangRadius = radius;
   }
 
   function cardMesh(texture, w, h) {
@@ -134,34 +145,38 @@ export function mountTable(canvas) {
       const zone = layout.zones.find((item) => item.id === `seat-${index}`);
       if (!zone) return;
       const group = new THREE.Group();
-      const x = (zone.x + zone.w / 2 - 0.5) * 9;
-      const z = (zone.y + zone.h / 2 - 0.42) * 7;
+      const radius = canvas.__bangRadius || 4.4;
+      const spread = radius * (0.62 + Math.min(ordered.length, 7) * 0.035);
+      const angle = Math.PI * 0.5 + (Math.PI * 2 * index) / ordered.length;
+      const x = Math.cos(angle) * spread * (aspectWide() ? 1.35 : 1);
+      const z = Math.sin(angle) * spread * 0.48;
       group.position.set(x, 0.02, z);
       group.userData.playerId = player.id;
       const reach = player.id !== next.yourId && player.connected !== false && player.distance != null && player.distance <= weaponRange(next);
       group.userData.baseY = reach ? 0.28 : 0.02;
       group.position.y = group.userData.baseY;
       const character = characterById(player.character);
-      const face = cardMesh(loadTexture(character?.image, textures), 1.45 * zone.scale, 2.1 * zone.scale);
+      const faceW = radius * (ordered.length > 5 ? 0.3 : 0.42) * zone.scale;
+      const face = cardMesh(loadTexture(character?.image, textures), faceW, faceW * 1.48);
       face.position.set(0, 0.01, 0);
       face.userData.playerId = player.id;
       group.add(face);
       const gear = [player.equipment?.weapon, player.equipment?.barrel, player.equipment?.mustang, player.equipment?.scope, player.equipment?.jail, player.equipment?.dynamite].filter(Boolean);
       gear.forEach((card, gearIndex) => {
-        const mesh = cardMesh(loadTexture(CARD_INFO[card.type]?.image, textures), 0.72 * zone.scale, 1.05 * zone.scale);
-        mesh.position.set(0.55 * zone.scale, 0.02 + gearIndex * 0.01, -0.15 + gearIndex * 0.18);
+        const mesh = cardMesh(loadTexture(CARD_INFO[card.type]?.image, textures), faceW * 0.62, faceW * 0.9);
+        mesh.position.set(faceW * 0.72, 0.02 + gearIndex * 0.01, -0.2 + gearIndex * 0.22);
         mesh.userData.playerId = player.id;
         group.add(mesh);
       });
       const role = player.role && ROLES[player.role];
-      const roleMesh = cardMesh(role ? loadTexture(role.image, textures) : back, 0.48 * zone.scale, 0.7 * zone.scale);
-      roleMesh.position.set(-0.5 * zone.scale, 0.015, 0.05);
+      const roleMesh = cardMesh(role ? loadTexture(role.image, textures) : back, faceW * 0.55, faceW * 0.8);
+      roleMesh.position.set(-faceW * 0.62, 0.015, 0.05);
       roleMesh.userData.playerId = player.id;
       group.add(roleMesh);
       const backs = Math.min(player.handCount || 0, 6);
       for (let n = 0; n < backs; n += 1) {
-        const pile = cardMesh(back, 0.5 * zone.scale, 0.74 * zone.scale);
-        pile.position.set(0.05, 0.03 + n * 0.012, 0.42);
+        const pile = cardMesh(back, faceW * 0.48, faceW * 0.7);
+        pile.position.set(0.08, 0.03 + n * 0.015, faceW * 0.55);
         pile.userData.playerId = player.id;
         group.add(pile);
       }
@@ -177,8 +192,9 @@ export function mountTable(canvas) {
     const deck = layout.zones.find((item) => item.id === "deck");
     if (deck && next.deckCount) {
       const group = new THREE.Group();
-      group.position.set((deck.x + deck.w / 2 - 0.5) * 9, 0.03, (deck.y + deck.h / 2 - 0.42) * 7);
-      const mesh = cardMesh(back, 0.7, 1.02);
+      const radius = canvas.__bangRadius || 4.4;
+      group.position.set(-radius * 0.22, 0.03, 0);
+      const mesh = cardMesh(back, radius * 0.28, radius * 0.4);
       mesh.userData.kind = "deck";
       group.add(mesh);
       scene.add(group);
@@ -219,8 +235,8 @@ export function mountTable(canvas) {
 
   function update(next, aim) {
     aimIds = new Set(aim || []);
-    rebuild(next);
     resize();
+    rebuild(next);
     return projectSeats();
   }
 

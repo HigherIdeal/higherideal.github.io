@@ -621,6 +621,97 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   .table-screen .action-bar .bar-btn { font-size: 11px; padding: 6px 8px; }
   #zoom-layer .spread-card { width: clamp(140px, 45vw, 180px); }
 }
+.table-screen .board {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  perspective: 1400px;
+}
+.felt {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  transform-style: preserve-3d;
+}
+.hand-dock {
+  position: relative;
+  z-index: 6;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-height: 30%;
+  padding: 4px 16px 12px;
+  pointer-events: none;
+}
+.hand-dock .stack,
+.hand-dock .action-bar,
+.hand-dock .bar-btn { pointer-events: auto; }
+.board.is-flat3d .felt {
+  transform: rotateX(46deg);
+  transform-origin: 50% 72%;
+}
+.board.is-flat3d .seat,
+.board.is-flat3d .self-tray,
+.board.is-flat3d .center-piles {
+  position: absolute;
+  margin: 0;
+  max-width: none;
+}
+.board.is-flat3d .seat .card,
+.board.is-flat3d .self-tray .card { width: 72%; }
+.board.is-webgl { background: #000; background-image: none; box-shadow: none; }
+.board.is-webgl::before { display: none; }
+.board.is-webgl .felt { transform: none; }
+.board.is-webgl .seat,
+.board.is-webgl .self-tray { position: absolute; z-index: 2; max-width: none; }
+.board.is-webgl .center-piles,
+.board.is-webgl .felt .stack { display: none; }
+.board.is-webgl .who {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  margin: 0;
+  justify-content: center;
+  text-shadow: 0 1px 2px #000;
+}
+#table-gl { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; pointer-events: none; }
+.board.is-webgl.is-aiming #table-gl { pointer-events: auto; z-index: 3; }
+.seat-btn, .self-tray .seat-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.board.is-webgl .seat-btn { position: absolute; inset: 0; z-index: 4; }
+#hand-fan { overflow: hidden; }
+#hand-fan .fan-card {
+  position: fixed;
+  width: 120px;
+  max-width: 22vw;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  transform-origin: 50% 80%;
+}
+#hand-fan .fan-card .card { width: 100%; }
+#hand-fan .fan-actions {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  z-index: 5;
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .01ms !important;

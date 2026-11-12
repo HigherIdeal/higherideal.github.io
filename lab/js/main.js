@@ -1,6 +1,6 @@
-import { ENTRY_CODE } from "./config.js?v=13";
-import { connect } from "./net.js?v=13";
-import { mount } from "./ui.js?v=13";
+import { ENTRY_CODE } from "./config.js?v=14";
+import { connect } from "./net.js?v=14";
+import { mount } from "./ui.js?v=14";
 
 const app = document.querySelector("#app");
 let link = null;
