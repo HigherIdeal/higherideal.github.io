@@ -1,4 +1,5 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=11";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=12";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=12";
 
 const ui = {
   selected: null,
@@ -34,6 +35,8 @@ function backCard(label, attrs = "") {
 }
 
 export function mount(app, ctx) {
+  const previousView = app.__ctx?.view || null;
+  const previousFrame = captureBefore(app, previousView);
   const log = app.querySelector("#log");
   const stick = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 28;
   const input = app.querySelector("#chat-input");
@@ -62,8 +65,12 @@ export function mount(app, ctx) {
   }
   app.__ctx = ctx;
   renderSpread(ctx);
+  applyEffects(app, previousView, view, previousFrame);
 }
 
+function soundButtonHtml() {
+  return `<button type="button" class="sound-toggle" data-action="sound-toggle" aria-label="효과음 ${isSoundOn() ? "끄기" : "켜기"}" aria-pressed="${isSoundOn()}">${isSoundOn() ? "소리 켜짐" : "소리 꺼짐"}</button>`;
+}
 function screenHtml(ctx) {
   if (!ctx.view) return ctx.status?.mode === "entry" || !ctx.status ? entryHtml(ctx) : waitHtml(ctx);
   if (ctx.view.phase === "lobby") return lobbyHtml(ctx);
@@ -112,7 +119,8 @@ function lobbyHtml(ctx) {
     <header class="topbar">
       <div class="brand-mini">BANG!</div>
       <p>${esc(ctx.status?.text || "")}</p>
-      <button type="button" data-action="help">도움말</button>
+      ${soundButtonHtml()}
+       <button type="button" data-action="help">도움말</button>
     </header>
     <section class="lobby">
       <h1>대기실</h1>
@@ -146,7 +154,8 @@ function selectHtml(ctx) {
     <header class="topbar">
       <div class="brand-mini">BANG!</div>
       <p>${me?.role ? ROLES[me.role].ko : "역할 확인"} · 인물을 고르세요</p>
-      <button type="button" data-action="help">도움말</button>
+      ${soundButtonHtml()}
+       <button type="button" data-action="help">도움말</button>
     </header>
     <section class="choose">
       ${me?.role ? `<div class="my-role">
@@ -191,7 +200,8 @@ function tableHtml(ctx) {
       <header class="topbar">
         <div class="brand-mini">BANG!</div>
         <p>${esc(phaseLine(view, current))}</p>
-        <button type="button" data-action="help">도움말</button>
+        ${soundButtonHtml()}
+       <button type="button" data-action="help">도움말</button>
       </header>
       <div class="board">
       ${aroundHtml(ring.filter((p) => p.id !== view.yourId), view)}
@@ -260,11 +270,16 @@ function seatCards(p, view) {
 function seatHtml(p, view) {
   const selected = ui.picker?.targetId === p.id || isTarget(view, p.id);
   const offline = p.connected === false;
-  return `<article class="seat ${selected ? "is-target" : ""} ${offline ? "is-offline" : ""}" data-player="${esc(p.id)}" data-presence="${offline ? "off" : "on"}" ${selected ? `data-legal-target="1"` : ""}>
+  const me = view.players.find((player) => player.id === view.yourId);
+  const weapon = me?.equipment?.weapon;
+  const range = weapon ? (CARD_INFO[weapon.type]?.range || 1) : 1;
+  const reachable = Boolean(me?.alive && p.alive && p.distance != null && p.distance <= range);
+  const distanceClass = view.phase !== "play" || !me?.alive ? "" : (selected || reachable ? "is-reachable" : "is-distant");
+  const activeTurn = p.id === view.currentId ? "is-turn" : "";
+  return `<article class="seat ${selected ? "is-target" : ""} ${offline ? "is-offline" : ""} ${distanceClass} ${activeTurn}" data-player="${esc(p.id)}" data-presence="${offline ? "off" : "on"}" ${selected ? `data-legal-target="1"` : ""}>
     ${stackHtml(`seat-${p.id}`, seatCards(p, view))}
     <p class="who">
       <strong>${esc(p.nickname)}</strong>
-      ${p.distance ? `<span>거리 ${p.distance}</span>` : ""}
       ${presenceHtml(p)}
       <span class="bullets" aria-label="생명 ${p.hp}">${bullets(p.hp, p.maxHp)}</span>
       <span class="hand-count" title="손패" aria-label="손패 ${p.handCount}장">${p.handCount}</span>
@@ -313,7 +328,7 @@ function bullets(hp, max) {
 
 function selfTray(p, view) {
   const selected = isTarget(view, p.id);
-  return `<div class="self-tray ${selected ? "is-target" : ""}" ${selected ? `data-legal-target="1" data-player="${esc(p.id)}"` : ""}>
+  return `<div class="self-tray ${selected ? "is-target" : ""} ${p.id === view.currentId ? "is-turn" : ""}" data-player="${esc(p.id)}" ${selected ? 'data-legal-target="1"' : ""}>
     ${stackHtml("self", seatCards(p, view))}
     <p class="who">
       <strong>${esc(p.nickname)}</strong>
@@ -528,6 +543,11 @@ function onSubmit(event, app) {
 function onClick(event, app) {
   const ctx = app.__ctx;
   const view = ctx.view;
+  if (event.target.closest("[data-action=sound-toggle]")) {
+    toggleSound();
+    mount(app, ctx);
+    return;
+  }
   if (event.target.closest("[data-action=help]")) app.querySelector("#help")?.showModal();
   if (event.target.closest("[data-action=close-help]")) app.querySelector("#help")?.close();
   if (event.target.closest("[data-tab]")) {
@@ -829,6 +849,10 @@ function renderSpread(ctx) {
   const layer = document.querySelector("#zoom-layer");
   if (!layer) return;
   const view = ctx?.view;
+  const oldScroller = layer.querySelector(".spread-scroller");
+  const oldScrollLeft = oldScroller?.scrollLeft || 0;
+  const oldKind = layer.querySelector(".spread-sheet")?.dataset.spreadKind;
+  const opening = layer.hidden;
   if (!ui.spread || !view || (view.phase !== "play" && view.phase !== "end")) {
     if (ui.spread && view && view.phase !== "play" && view.phase !== "end") ui.spread = null;
     layer.hidden = true;
@@ -864,7 +888,7 @@ function renderSpread(ctx) {
   }
   const picked = ui.spreadPick;
   layer.hidden = false;
-  layer.innerHTML = `<div class="spread-sheet" data-spread-kind="${esc(ui.spread.kind)}">
+  layer.innerHTML = `<div class="spread-sheet ${opening ? "" : "no-intro"}" data-spread-kind="${esc(ui.spread.kind)}">
     <div class="spread-top">
       <p>${esc(title)}</p>
       <button type="button" class="text-btn" data-spread-close>닫기</button>
@@ -873,12 +897,11 @@ function renderSpread(ctx) {
       ${cards.map((html) => {
         const id = html.match(/data-card-id="([^"]+)"/)?.[1] || "";
         const on = picked && id === picked;
-        return `<div class="spread-card${on ? " is-current" : ""}" data-card-id="${esc(id)}">${html}</div>`;
+        return `<div class="spread-card${on ? " is-current" : ""}" style="--spread-i:${cards.indexOf(html)}" data-card-id="${esc(id)}">${html}</div>`;
       }).join("")}
     </div>
     <div class="spread-actions">${actions}</div>
   </div>`;
-  if (picked) {
-    layer.querySelector(".spread-card.is-current")?.scrollIntoView({ inline: "center", block: "nearest" });
-  }
+  const scroller = layer.querySelector(".spread-scroller");
+  if (scroller && !opening && oldKind === ui.spread.kind) scroller.scrollLeft = oldScrollLeft;
 }

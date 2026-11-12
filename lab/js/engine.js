@@ -9,8 +9,8 @@ import {
   cardLabel,
   characterById,
   rolesForCount,
-} from "./cards.js?v=11";
-import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=11";
+} from "./cards.js?v=12";
+import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=12";
 
 const WEAPONS = new Set(WEAPON_TYPES);
 
@@ -1382,8 +1382,36 @@ function shuffle(state, list) {
   return arr;
 }
 
+// Final-consonant-aware Korean particles, including the ㄹ exception for 으로/로.
+function particle(word, choices) {
+  const token = String(word).trim();
+  const hangul = token.match(/[가-힣](?=[^가-힣]*$)/)?.[0];
+  let jong = 0;
+  if (hangul) {
+    jong = (hangul.charCodeAt(0) - 0xac00) % 28;
+  } else {
+    const digit = token.match(/[0-9](?=[^0-9]*$)/)?.[0];
+    const digitJong = { 0: 21, 1: 8, 2: 0, 3: 16, 4: 0, 5: 0, 6: 1, 7: 8, 8: 8, 9: 0 };
+    jong = digit == null ? 0 : digitJong[digit];
+  }
+  const forms = {
+    "을(를)": ["을", "를"], "이(가)": ["이", "가"],
+    "은(는)": ["은", "는"], "과(와)": ["과", "와"],
+    "으로(로)": ["으로", "로"],
+  };
+  const pair = forms[choices];
+  if (!pair) return choices;
+  const hasFinal = Boolean(jong) && !(choices === "으로(로)" && jong === 8);
+  return hasFinal ? pair[0] : pair[1];
+}
+
+function naturalKorean(text) {
+  return String(text).replace(/([^\s]+?)(을\(를\)|이\(가\)|은\(는\)|과\(와\)|으로\(로\))/g,
+    (_, word, pair) => word + particle(word, pair));
+}
+
 function log(state, text) {
-  state.log.push({ id: `l${state.log.length}-${state.seq}`, text, t: Date.now() });
+  state.log.push({ id: `l${state.log.length}-${state.seq}`, text: naturalKorean(text), t: Date.now() });
   if (state.log.length > 80) state.log.shift();
 }
 

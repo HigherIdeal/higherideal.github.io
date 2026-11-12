@@ -1,9 +1,9 @@
-import { ENTRY_CODE, ROOM_ID } from "./config.js?v=11";
-import { addPlayer, autoChoice, createLobby, dispatch, expireDisconnects, markDisconnect, projectView } from "./engine.js?v=11";
-import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=11";
+import { ENTRY_CODE, ROOM_ID } from "./config.js?v=12";
+import { addPlayer, autoChoice, createLobby, dispatch, expireDisconnects, markDisconnect, projectView } from "./engine.js?v=12";
+import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=12";
 
 const HOST_LOST_MS = 12000;
-const STALE_MS = 12000;
+const STALE_MS = 25000;
 
 function newId() {
   return crypto.randomUUID();
@@ -292,6 +292,12 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       const info = directory.get(msg.from);
       if (info?.token && msg.token && info.token !== msg.token) return;
       if (info) info.seen = Date.now();
+      // An authenticated action is also proof the player is online.
+      const who = state?.players.find((p) => p.id === msg.from);
+      if (who && who.connected === false) {
+        who.connected = true;
+        delete who.disconnectedAt;
+      }
       apply(msg.from, msg.action || {});
       return;
     }
