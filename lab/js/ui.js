@@ -1,8 +1,8 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=19";
-import { naturalKorean } from "./engine.js?v=19";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=19";
-import { solveProjectedLayout } from "./layout.js?v=19";
-import { mountTable } from "./table3d.js?v=19";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=20";
+import { naturalKorean } from "./engine.js?v=20";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=20";
+import { solveProjectedLayout } from "./layout.js?v=20";
+import { mountTable } from "./table3d.js?v=20";
 
 const ui = {
   selected: null,
@@ -305,7 +305,7 @@ function seatCards(p, view) {
   return [
     roleFace(p, view),
     ch ? `<button type="button" class="card char-card" data-card-id="${esc(p.character)}"><img src="${ch.image}" alt="${esc(ch.name)}" draggable="false" /></button>` : "",
-    ...equipPieces(p),
+    gearFan(p),
   ];
 }
 
@@ -354,6 +354,12 @@ function equipPieces(p) {
   return [eq.weapon, eq.barrel, eq.mustang, eq.scope, eq.jail, eq.dynamite]
     .filter(Boolean)
     .map((card) => cardArt(card, `data-equip="${esc(card.id)}"`));
+}
+
+function gearFan(p) {
+  const cards = equipPieces(p);
+  if (!cards.length) return "";
+  return `<button type="button" class="blue-fan" data-gear-stack="${esc(p.id)}" aria-label="장착 카드 ${cards.length}장">${cards.join("")}</button>`;
 }
 
 function presenceHtml(p) {
@@ -636,6 +642,13 @@ function onClick(event, app) {
     ui.sid = new Set();
     return;
   }
+  const gearStack = event.target.closest("[data-gear-stack]");
+  if (gearStack) {
+    ui.spread = { kind: "gear", playerId: gearStack.dataset.gearStack };
+    ui.spreadPick = null;
+    renderSpread(ctx);
+    return;
+  }
   const seatBtn = event.target.closest(".seat-btn");
   if (seatBtn) {
     const id = seatBtn.dataset.player;
@@ -897,6 +910,17 @@ function renderSpread(ctx) {
     title = "손패";
     cards = hand.map((card) => cardArt(card, `data-spread-card="1"`));
     if (ui.spreadPick) actions = spreadHandActions(ctx, ui.spreadPick);
+  } else if (ui.spread.kind === "gear") {
+    const p = view.players.find((pl) => pl.id === ui.spread.playerId);
+    const gear = p ? equipPieces(p) : [];
+    if (!p || !gear.length) {
+      ui.spread = null;
+      layer.hidden = true;
+      layer.innerHTML = "";
+      return;
+    }
+    title = `${p.nickname} 앞에 놓은 카드`;
+    cards = gear;
   } else {
     const p = view.players.find((pl) => pl.id === ui.spread.playerId);
     if (!p) {
@@ -954,6 +978,12 @@ function syncTable(app, view) {
       if (app.dataset.renderer !== "webgl") console.info("[bang] renderer", "webgl");
       app.dataset.renderer = "webgl";
       ui.gl.setPeek?.(showPeek);
+      ui.gl.setGear?.((info) => {
+        if (!info?.playerId) return;
+        ui.spread = { kind: "gear", playerId: info.playerId };
+        ui.spreadPick = null;
+        renderSpread(app.__ctx);
+      });
     } else {
       ui.gl = false;
       ui.glCanvas = null;

@@ -225,6 +225,23 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .who strong { font-size: 12px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .seat.is-target, .self-tray.is-target { outline: 1px solid var(--line); outline-offset: 4px; cursor: pointer; }
 .char-card, .role-card { width: 58px; }
+.blue-fan {
+  display: flex;
+  align-items: flex-end;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.blue-fan .card {
+  width: 62px;
+  margin-left: -68%;
+  position: relative;
+}
+.blue-fan .card:first-child { margin-left: 0; z-index: 6; }
+.blue-fan .card:nth-child(2) { z-index: 5; }
+.blue-fan .card:nth-child(3) { z-index: 4; }
+.blue-fan .card:nth-child(n + 4) { z-index: 3; }
 .equips { flex-wrap: wrap; max-width: 156px; }
 .equips .card { width: 34px; }
 .center-piles {

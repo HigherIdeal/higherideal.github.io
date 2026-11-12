@@ -1,6 +1,6 @@
-import * as THREE from "../vendor/three.module.js?v=19";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=19";
-import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=19";
+import * as THREE from "../vendor/three.module.js?v=20";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=20";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=20";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -278,10 +278,7 @@ export function mountTable(canvas) {
       put(zone("role"), role ? loadTexture(role.image, textures) : back, player.id, mode);
       if (player.id !== mine) put(zone("hand"), back, player.id, mode);
       const eq = player.equipment || {};
-      put(zone("weapon"), eq.weapon ? loadTexture(CARD_INFO[eq.weapon.type]?.image, textures) : null, player.id, mode);
-      const blue = eq.jail || eq.dynamite || eq.barrel || eq.mustang || eq.scope;
-      put(zone("jail"), blue ? loadTexture(CARD_INFO[blue.type]?.image, textures) : null, player.id, mode);
-      if (eq.jail && eq.dynamite) put(zone("dynamite"), loadTexture(CARD_INFO[eq.dynamite.type]?.image, textures), player.id, mode);
+      placeGear(player, zone("character"), mode);
       const anchor = zone("character");
       if (anchor?.world && reach) {
         const pool = new THREE.PointLight(0xffc48a, 0.28, 1.25, 2);
@@ -318,6 +315,39 @@ export function mountTable(canvas) {
     if (next.discardTop) put(layout.discard, loadTexture(CARD_INFO[next.discardTop.type]?.image, textures), "", "self");
     groups.__layout = layout;
     groups.__order = ordered.map((player) => player.id);
+  }
+
+  function placeGear(player, anchor, mode) {
+    const cards = [player.equipment?.weapon, player.equipment?.barrel, player.equipment?.mustang, player.equipment?.scope, player.equipment?.jail, player.equipment?.dynamite].filter(Boolean);
+    if (!cards.length || !anchor?.world) return;
+    const w = anchor.world.w;
+    const span = Math.hypot(anchor.world.x, anchor.world.z) || 1;
+    const outX = anchor.world.x / span;
+    const outZ = anchor.world.z / span;
+    const rightX = -outZ;
+    const rightZ = outX;
+    const step = w * 0.3;
+    cards.forEach((card, index) => {
+      const texture = loadTexture(CARD_INFO[card.type]?.image, textures);
+      if (!texture) return;
+      const mesh = cardMesh(texture, w * 0.92, w * 0.92 * 1.45, mode);
+      const along = (index - (cards.length - 1) / 2) * step;
+      mesh.position.set(
+        anchor.world.x + outX * w * 0.58 + rightX * along,
+        0.05 + (cards.length - index) * 0.016,
+        anchor.world.z + outZ * w * 0.58 + rightZ * along,
+      );
+      mesh.rotation.order = "YXZ";
+      mesh.rotation.y = cardYaw(anchor.world.x, anchor.world.z);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.userData.kind = "gear";
+      mesh.userData.gear = true;
+      mesh.userData.playerId = player.id;
+      mesh.userData.peek = false;
+      mesh.userData.baseY = mesh.position.y;
+      scene.add(mesh);
+      groups.set(`gear-${player.id}-${card.id}`, mesh);
+    });
   }
 
   function weaponRange(next) {
@@ -467,6 +497,7 @@ export function mountTable(canvas) {
       playerId: obj.userData.playerId || "",
       image: obj.userData.image || "",
       peek: Boolean(obj.userData.peek),
+      gear: Boolean(obj.userData.gear),
     };
   }
 
@@ -520,12 +551,14 @@ export function mountTable(canvas) {
       }
       lastTap = now;
       const info = pick(event.clientX, event.clientY);
-      if (info?.peek && info.image) onPeek?.(info);
+      if (info?.gear) onGear?.(info);
+      else if (info?.peek && info.image) onPeek?.(info);
     } else settleView();
   }
   canvas.addEventListener("pointerup", endFinger);
   canvas.addEventListener("pointercancel", (event) => fingers.delete(event.pointerId));
   let onPeek = null;
+  let onGear = null;
   let onSpots = null;
 
   resize();
@@ -540,6 +573,7 @@ export function mountTable(canvas) {
     resize,
     resetView,
     setPeek(fn) { onPeek = fn; },
+    setGear(fn) { onGear = fn; },
     setSpots(fn) { onSpots = fn; },
     stop() {
       running = false;
