@@ -1,9 +1,9 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=28";
-import { naturalKorean } from "./engine.js?v=28";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=28";
-import { solveProjectedLayout } from "./layout.js?v=28";
-import { mountTable } from "./table3d.js?v=28";
-import { stampURL } from "./stamp.js?v=28";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=29";
+import { naturalKorean } from "./engine.js?v=29";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=29";
+import { solveProjectedLayout } from "./layout.js?v=29";
+import { mountTable } from "./table3d.js?v=29";
+import { stampURL } from "./stamp.js?v=29";
 
 const ui = {
   selected: null,
@@ -534,13 +534,9 @@ function actionBar(view, me) {
 }
 
 function storeHtml(view) {
-  if (!view.store) return "";
-  const mine = view.store.pickerId === view.yourId;
+  if (!view.store || view.store.pickerId === view.yourId) return "";
   const who = view.players.find((p) => p.id === view.store.pickerId);
-  return `<div class="store">
-    <p>${mine ? "가져갈 카드를 고르세요" : `${esc(who?.nickname || "")} 님이 고르는 중`}</p>
-    <div class="store-row">${view.store.cards.map((card) => cardArt(card, mine ? `data-store-card="1"` : "")).join("")}</div>
-  </div>`;
+  return `<p class="prompt-note">잡화점 · ${esc(who?.nickname || "")} 님이 고르는 중</p>`;
 }
 
 function abilityPanel(view) {
@@ -552,7 +548,12 @@ function abilityPanel(view) {
   if (me?.character === "sid" && view.currentId === me.id && view.turnPhase === "play" && !prompt && me.hp < me.maxHp && (me.hand || []).length >= 2) {
     return `<div class="ability-panel"><p>시드 케첨</p><button type="button" class="bar-btn" data-action="sid-mode">${ui.sidMode ? "회복 취소" : "카드 2장 버리고 생명 1 회복"}</button></div>`;
   }
-  if (prompt?.kind === "store" && prompt.mine) {
+  if (prompt?.kind === "store") {
+    const picking = prompt.mine && view.store?.pickerId === view.yourId;
+    if (!picking) {
+      const who = view.players.find((p) => p.id === (view.store?.pickerId || prompt.playerId));
+      return `<div class="ability-panel ability-wait" data-ability="store-wait"><p>잡화점 · ${esc(who?.nickname || "")} 님이 고르는 중</p></div>`;
+    }
     const cards = (view.store?.cards || []).map((card) => cardArt(card, `data-store-card="1"`)).join("");
     return `<div class="ability-panel" data-ability="store"><p>잡화점 · 가져갈 카드를 고르세요</p><div class="store-row">${cards}</div></div>`;
   }
@@ -1216,31 +1217,17 @@ function syncTable(app, view) {
   } else placeFelt(felt, view, null, false);
 }
 
-function stableSpot(id, x, y) {
-  if (!ui.labelHold) ui.labelHold = new Map();
-  const prev = ui.labelHold.get(id);
-  if (!prev) {
-    const spot = { x, y, pendingX: x, pendingY: y, pendingN: 0 };
-    ui.labelHold.set(id, spot);
-    return spot;
-  }
-  const jump = Math.hypot(x - prev.x, y - prev.y);
-  if (jump < 4) {
-    prev.pendingN = 0;
-    return prev;
-  }
-  if (Math.hypot(x - prev.pendingX, y - prev.pendingY) < 4) prev.pendingN += 1;
-  else {
-    prev.pendingX = x;
-    prev.pendingY = y;
-    prev.pendingN = 1;
-  }
-  if (prev.pendingN >= 5 || jump > 120) {
-    prev.x = x;
-    prev.y = y;
-    prev.pendingN = 0;
-  }
-  return prev;
+function labelOverlaps(box, blockers) {
+  return blockers.some((blocker) => box.left < blocker.right && box.right > blocker.left && box.top < blocker.bottom && box.bottom > blocker.top);
+}
+
+function labelLayer() {
+  let layer = document.querySelector("#seat-labels");
+  if (layer) return layer;
+  layer = document.createElement("div");
+  layer.id = "seat-labels";
+  document.body.appendChild(layer);
+  return layer;
 }
 
 function placeFelt(felt, view, projected, webgl) {
@@ -1248,17 +1235,51 @@ function placeFelt(felt, view, projected, webgl) {
   const me = living.find((p) => p.id === view.yourId);
   const ordered = me ? [me, ...living.filter((p) => p.id !== me.id)] : living;
   const layout = webgl ? null : solveProjectedLayout(window.innerWidth, window.innerHeight, ordered.length);
+  const blockers = [];
+  if (webgl) {
+    const hand = document.querySelector(".hand-dock")?.getBoundingClientRect();
+    const zoom = document.querySelector("#card-zoom:not([hidden]) .zoom-actions")?.getBoundingClientRect();
+    if (hand && hand.height > 8) blockers.push(hand);
+    if (zoom && zoom.width > 8) blockers.push(zoom);
+  }
   ordered.forEach((player, index) => {
     const node = felt.querySelector(player.id === view.yourId ? ".self-tray" : `.seat[data-player="${player.id}"]`);
     if (!node) return;
     const raw = webgl && projected ? projected.find((item) => item.id === player.id) : layout.seats[index];
     if (!raw) return;
-    const spot = webgl ? stableSpot(player.id, raw.x, raw.y) : raw;
-    node.style.left = `${spot.x}px`;
-    node.style.top = `${spot.y}px`;
-    node.style.width = `${raw.w}px`;
-    node.style.height = "auto";
-    node.style.transform = "none";
+    if (!webgl) {
+      node.style.left = `${raw.x}px`;
+      node.style.top = `${raw.y}px`;
+      node.style.width = `${raw.w}px`;
+      return;
+    }
+    const label = node.querySelector(".who") || document.querySelector(`#seat-labels .who[data-player="${player.id}"]`);
+    if (!label) return;
+    const layer = labelLayer();
+    const previous = layer.querySelector(`.who[data-player="${player.id}"]`);
+    if (previous && previous !== label) previous.remove();
+    label.dataset.player = player.id;
+    if (label.parentElement !== layer) layer.appendChild(label);
+    const w = Math.max(72, Math.round(label.offsetWidth || 96));
+    const h = Math.max(28, Math.round(label.offsetHeight || 46));
+    const bottom = raw.bottom ?? raw.y;
+    let x = Math.round(raw.x - w / 2);
+    let y = Math.round(bottom + 2);
+    if (labelOverlaps({ left: x, top: y, right: x + w, bottom: y + h }, blockers)) {
+      const mid = Math.round(((raw.top ?? bottom) + bottom) / 2 - h / 2);
+      const rightSide = Math.round((raw.right ?? raw.x) + 6);
+      const leftSide = Math.round((raw.left ?? raw.x) - w - 6);
+      const preferRight = raw.x < window.innerWidth / 2;
+      const first = preferRight ? rightSide : leftSide;
+      const second = preferRight ? leftSide : rightSide;
+      x = labelOverlaps({ left: first, top: mid, right: first + w, bottom: mid + h }, blockers) ? second : first;
+      y = mid;
+    }
+    label.style.position = "fixed";
+    label.style.left = `${x}px`;
+    label.style.top = `${y}px`;
+    label.style.margin = "0";
+    label.style.zIndex = "6";
   });
   const piles = felt.querySelector(".center-piles");
   if (piles && layout?.deck && !webgl) {

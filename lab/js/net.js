@@ -1,6 +1,6 @@
-import { ENTRY_CODE, ROOM_ID } from "./config.js?v=28";
-import { addPlayer, autoChoice, claimSeat, createLobby, dispatch, expireDisconnects, markDisconnect, projectView, rebindPlayer } from "./engine.js?v=28";
-import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=28";
+import { ENTRY_CODE, ROOM_ID } from "./config.js?v=29";
+import { addPlayer, autoChoice, claimSeat, createLobby, dispatch, expireDisconnects, markDisconnect, projectView, rebindPlayer } from "./engine.js?v=29";
+import { identityKeys, openRelay, openSeal, publicJwk, relayNamespace, roomKey, seal, sharedKey } from "./relay.js?v=29";
 
 const HOST_LOST_MS = 20000;
 const STALE_MS = 45000;

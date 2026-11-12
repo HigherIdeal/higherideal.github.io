@@ -1,7 +1,7 @@
-import * as THREE from "../vendor/three.module.js?v=28";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=28";
-import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=28";
-import { stampCanvas } from "./stamp.js?v=28";
+import * as THREE from "../vendor/three.module.js?v=29";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=29";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=29";
+import { stampCanvas } from "./stamp.js?v=29";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -264,11 +264,11 @@ export function mountTable(canvas) {
   function cardMesh(texture, w, h, mode) {
     const material = cardMaterial(texture, back);
     if (mode === "reach") {
-      material.color.set(0xfff8ef);
-      material.emissive.set(0x3a2412);
-      material.emissiveIntensity = 0.045;
+      material.color.set(0xfff6e4);
+      material.emissive.set(0xe0a040);
+      material.emissiveIntensity = 0.7;
     } else if (mode === "dim") {
-      material.color.set(0xa39c92);
+      material.color.set(0x6a635c);
       material.emissive.set(0x000000);
       material.emissiveIntensity = 0;
     }
@@ -314,6 +314,17 @@ export function mountTable(canvas) {
       }
       scene.add(mesh);
       groups.set(zone.id, mesh);
+      if (mode === "reach" && zone.kind === "character") {
+        const glow = new THREE.Mesh(
+          new THREE.PlaneGeometry(zone.world.w * 1.14, zone.world.d * 1.14),
+          new THREE.MeshBasicMaterial({ color: 0xf0c14a, toneMapped: false }),
+        );
+        glow.position.set(mesh.position.x, mesh.position.y - 0.02, mesh.position.z);
+        glow.rotation.copy(mesh.rotation);
+        glow.userData.kind = "glow";
+        scene.add(glow);
+        groups.set(`${zone.id}:glow`, glow);
+      }
     };
     ordered.forEach((player, index) => {
       const zone = (kind) => layout.leaves.find((item) => item.seat === index && item.kind === kind);
@@ -553,8 +564,12 @@ export function mountTable(canvas) {
       const chipW = 108;
       spots.push({
         id: mesh.userData.playerId,
-        x: box.anchorX - chipW / 2,
-        y: box.anchorY + 1,
+        x: box.anchorX,
+        y: box.anchorY,
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
         w: chipW,
         h: 36,
       });
@@ -563,7 +578,7 @@ export function mountTable(canvas) {
     const hits = [];
     for (const mesh of groups.values()) {
       const kind = mesh.userData.kind;
-      if (!kind || kind === "role") continue;
+      if (!kind || kind === "role" || kind === "glow") continue;
       const box = cardScreenBox(mesh);
       hits.push({
         kind,

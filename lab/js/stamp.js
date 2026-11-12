@@ -1,4 +1,4 @@
-import { SUITS } from "./cards.js?v=28";
+import { SUITS } from "./cards.js?v=29";
 
 /** Cover the artwork's baked-in index and paint the real suit and rank on both corners. */
 export function stampCanvas(img, suit, rank) {
