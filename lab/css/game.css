@@ -843,7 +843,19 @@ body:has(.board.is-webgl) #app .help * { pointer-events: auto; }
   height: auto !important;
   transform: translate(-50%, -50%);
 }
-.zoom-actions { position: fixed; left: 50%; bottom: 8%; transform: translateX(-50%); z-index: 3; display: flex; gap: 8px; }
+.zoom-actions {
+  position: fixed;
+  left: 50%;
+  top: calc(46% + min(74vw, 320px) * 0.82);
+  transform: translate(-50%, 8px);
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+}
+.steal-picker { width: min(520px, calc(100vw - 24px)); }
+.steal-label { margin: 12px 0 6px; color: #ffe7a8; font-weight: 800; letter-spacing: 0.04em; }
+.steal-picker .take-row { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.steal-picker .take-row + .steal-label { margin-top: 18px; padding-top: 12px; border-top: 1px solid rgba(226, 194, 122, 0.45); }
 .zoom-backs {
   position: fixed; z-index: 2; display: flex; gap: 8px; align-items: flex-end;
   transition: left .4s ease, top .4s ease, transform .4s ease;

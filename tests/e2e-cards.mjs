@@ -1,7 +1,7 @@
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 
-const base = "http://127.0.0.1:8765/lab/?v=25";
+const base = "http://127.0.0.1:8765/lab/?v=26";
 const names = ["가람", "나래", "다온", "라온", "마루"];
 mkdirSync("/opt/cursor/artifacts", { recursive: true });
 const C = (type, suit, rank) => ({ type, suit, rank });
@@ -127,6 +127,13 @@ try {
     const leak = hiddenLeak(await viewOf(page));
     if (leak) throw new Error(leak);
   }
+  const sheriffPreview = await byName(pages, "가람");
+  await sheriffPreview.screenshot({ path: "/opt/cursor/artifacts/v26_own_area.png" });
+  if (process.env.SHOT_ONLY) {
+    console.log("SHOT");
+    await browser.close();
+    process.exit(0);
+  }
   const idle = await byName(pages, "나래");
   const samples = await idle.evaluate(() => new Promise((resolve) => {
     const node = document.querySelector(".seat .who, .self-tray .who");
@@ -171,7 +178,8 @@ try {
     card.dispatchEvent(new PointerEvent("pointerup", common));
   });
   await idle.waitForSelector("#card-zoom .zoom-fly.is-open", { timeout: 4000 });
-  await idle.screenshot({ path: "/opt/cursor/artifacts/v25_zoom_own_hand.png" });
+  await idle.waitForTimeout(700);
+  await idle.screenshot({ path: "/opt/cursor/artifacts/v26_hand_zoom.png" });
   await closeZoom(idle);
 
   const sheriff = await byName(pages, "가람");
@@ -191,7 +199,8 @@ try {
   });
   if (button.text !== "내기") throw new Error(`play label ${button.text}`);
   if (!button.bg.includes("36") && !button.color.includes("255")) throw new Error(`button colors ${button.bg} ${button.color}`);
-  await sheriff.screenshot({ path: "/opt/cursor/artifacts/v25_buttons.png" });
+  await sheriff.waitForTimeout(700);
+  await sheriff.screenshot({ path: "/opt/cursor/artifacts/v26_hand_zoom.png" });
   await sheriff.locator("#card-zoom [data-zoom-act=aim]").click();
   await sheriff.waitForFunction(() => document.querySelector("#app").dataset.aiming === "1");
   await sheriff.screenshot({ path: "/opt/cursor/artifacts/v25_aim.png" });
@@ -209,7 +218,7 @@ try {
     if (await page.locator("[data-hand-index], [data-hand-back]").count()) choosers.push((await viewOf(page)).yourName);
   }
   if (choosers.join() !== "가람") throw new Error(`hand choice shown to ${choosers}`);
-  await sheriff.screenshot({ path: "/opt/cursor/artifacts/v25_panic_backs.png" });
+  await sheriff.screenshot({ path: "/opt/cursor/artifacts/v26_picker.png" });
   const before = (await viewOf(idle)).players.find((p) => p.id === naraeId);
   await sheriff.locator("[data-hand-index='1'], [data-hand-back='1']").click();
   await idle.waitForFunction((count) => {

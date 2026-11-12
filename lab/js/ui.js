@@ -1,9 +1,9 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=25";
-import { naturalKorean } from "./engine.js?v=25";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=25";
-import { solveProjectedLayout } from "./layout.js?v=25";
-import { mountTable } from "./table3d.js?v=25";
-import { stampURL } from "./stamp.js?v=25";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=26";
+import { naturalKorean } from "./engine.js?v=26";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=26";
+import { solveProjectedLayout } from "./layout.js?v=26";
+import { mountTable } from "./table3d.js?v=26";
+import { stampURL } from "./stamp.js?v=26";
 
 const ui = {
   selected: null,
@@ -545,6 +545,10 @@ function abilityPanel(view) {
   if (me?.character === "sid" && view.currentId === me.id && view.turnPhase === "play" && !prompt && me.hp < me.maxHp && (me.hand || []).length >= 2) {
     return `<div class="ability-panel"><p>시드 케첨</p><button type="button" class="bar-btn" data-action="sid-mode">${ui.sidMode ? "회복 취소" : "카드 2장 버리고 생명 1 회복"}</button></div>`;
   }
+  if (prompt?.kind === "store" && prompt.mine) {
+    const cards = (view.store?.cards || []).map((card) => cardArt(card, `data-store-card="1"`)).join("");
+    return `<div class="ability-panel" data-ability="store"><p>잡화점 · 가져갈 카드를 고르세요</p><div class="store-row">${cards}</div></div>`;
+  }
   if (!prompt?.mine) return "";
   if (prompt.kind === "hand") {
     const backs = Array.from({ length: prompt.count }, (_, index) =>
@@ -591,18 +595,18 @@ function promptCardsHtml(view) {
 function pickerHtml(view) {
   if (!ui.picker) return "";
   const target = view.players.find((p) => p.id === ui.picker.targetId);
-  const buttons = ui.picker.takes.map((take) => {
-    if (take === "hand") {
-      const count = target?.handCount || 0;
-      return Array.from({ length: count }, (_, index) => `<button type="button" class="card card-back choice-back" data-take="hand" data-hand-index="${index}" aria-label="뒷면 카드"><span class="back-mark">BANG!</span></button>`).join("");
-    }
+  const backs = ui.picker.takes.includes("hand")
+    ? Array.from({ length: target?.handCount || 0 }, (_, index) => `<button type="button" class="card card-back choice-back" data-take="hand" data-hand-index="${index}" aria-label="뒷면 카드"><span class="back-mark">BANG!</span></button>`).join("")
+    : "";
+  const table = ui.picker.takes.filter((take) => take !== "hand").map((take) => {
     const card = Object.values(target?.equipment || {}).find((c) => c && c.id === take);
     if (!card) return "";
-    return `<button type="button" data-take="${esc(take)}">${cardArt(card)}</button>`;
+    return cardArt(card, `data-take="${esc(take)}"`);
   }).join("");
-  return `<div class="modal"><div class="modal-card">
+  return `<div class="modal"><div class="modal-card steal-picker">
     <h2>${esc(target?.nickname || "")} 님의 카드</h2>
-    <div class="take-row">${buttons}</div>
+    ${backs ? `<p class="steal-label">손패</p><div class="take-row">${backs}</div>` : ""}
+    ${table ? `<p class="steal-label">앞에 놓인 카드</p><div class="take-row">${table}</div>` : ""}
     <button type="button" class="text-btn" data-action="cancel-pick">취소</button>
   </div></div>`;
 }
