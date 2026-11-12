@@ -73,7 +73,7 @@ function entryHtml(ctx) {
   return `<main class="entry">
     <form class="poster ${ctx.entryError ? "is-shake" : ""}" data-form="entry" autocomplete="off">
       <div class="brand"><h1 class="bang">BANG!</h1><p class="ko">뱅!</p></div>
-      <p class="tagline">서부 살롱 · 베이스 게임 · 최대 7명</p>
+      <p class="tagline">최대 7명</p>
       <label class="field"><span>닉네임</span>
         <input data-field="nickname" maxlength="12" required placeholder="이름을 적어 주세요" value="${name}" />
       </label>
@@ -482,7 +482,7 @@ function toastHtml(ctx) {
 
 function helpHtml() {
   return `<dialog class="help" id="help">
-    <h2>뱅! 베이스</h2>
+    <h2>도움말</h2>
     <p>보안관은 무법자와 배신자를 모두 쓰러뜨리면 이깁니다. 부관은 보안관과 함께 이깁니다. 무법자는 보안관이 쓰러지면 이깁니다. 배신자는 마지막 한 명으로 남아야 이깁니다.</p>
     <p>턴마다 카드 2장을 뽑고, 카드를 낸 뒤, 손패가 생명력보다 많으면 버립니다. 뱅!은 보통 턴에 한 장입니다. 카드를 길게 누르면 크게 봅니다.</p>
     <p>방장(처음 들어온 사람)의 화면이 판을 진행합니다. 새로고침하면 같은 자리로 돌아옵니다.</p>
