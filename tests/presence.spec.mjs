@@ -12,15 +12,20 @@ function roomId() {
 
 function trackPeer(page, bag) {
   page.on("websocket", (socket) => {
-    const url = socket.url();
-    if (url.includes("peerjs.com")) bag.urls.add(url);
+    bag.urls.add(socket.url());
   });
+  page.on("pageerror", (err) => bag.errors.push(String(err)));
 }
 
 async function openSameBrowser(browser, room, count, bag) {
   const context = await browser.newContext({ viewport: { width: 1100, height: 900 } });
   await context.addInitScript((id) => {
     globalThis.__BANG_ROOM_ID = id;
+    const block = function RTCPeerConnection() {
+      throw new Error("webrtc blocked");
+    };
+    globalThis.RTCPeerConnection = block;
+    globalThis.webkitRTCPeerConnection = block;
   }, room);
   const pages = [];
   for (let i = 0; i < count; i += 1) {
@@ -36,6 +41,11 @@ async function openSeparate(browser, room, bag) {
   const context = await browser.newContext({ viewport: { width: 1100, height: 900 } });
   await context.addInitScript((id) => {
     globalThis.__BANG_ROOM_ID = id;
+    const block = function RTCPeerConnection() {
+      throw new Error("webrtc blocked");
+    };
+    globalThis.RTCPeerConnection = block;
+    globalThis.webkitRTCPeerConnection = block;
   }, room);
   const page = await context.newPage();
   trackPeer(page, bag);
@@ -120,12 +130,21 @@ function sameIdentity(before, after) {
     && after.screen === "play";
 }
 
-const browser = await chromium.launch({ headless: true });
-const peer = { urls: new Set() };
+const browser = await chromium.launch({
+  headless: true,
+  args: ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--disable-features=WebRtc"],
+});
+const peer = { urls: new Set(), errors: [] };
 try {
   const room = roomId();
   const names = ["가람", "나래", "다온", "라온"];
   const same = await openSameBrowser(browser, room, 4, peer);
+  const firstScreen = await same.pages[0].locator("#app").getAttribute("data-screen");
+  const firstLine = await same.pages[0].locator(".tagline").innerText();
+  const nicknameFields = await same.pages[0].locator("[data-field=nickname]").count();
+  if (firstScreen !== "entry" || nicknameFields !== 1 || firstLine.includes("중계") || firstLine.includes("찾는")) {
+    throw new Error(`entry screen did not show first: ${firstScreen} ${firstLine} fields=${nicknameFields}`);
+  }
   await Promise.all(same.pages.map((page, i) => fill(page, names[i])));
   await Promise.all(same.pages.map((page) => page.locator("[data-action=enter]").click()));
   await waitForNames(same.pages, names);
@@ -140,12 +159,18 @@ try {
   const five = [...names.slice(0, 1), "가람(2)", ...names.slice(1)];
   const joined = await waitForNames([...same.pages, other.page], five);
   if (joined.some((row) => row.status === "replaced")) throw new Error("a distinct tab was treated as a duplicate");
-  if (peer.urls.size < 1) throw new Error("no WebSocket to the public PeerJS broker");
-  for (const url of peer.urls) {
-    if (!url.includes("0.peerjs.com")) throw new Error(`broker was not public PeerJS: ${url}`);
+  const sockets = [...peer.urls];
+  if (sockets.some((url) => url.includes("peerjs") || url.includes("stun:") || url.includes("turn:"))) {
+    throw new Error(`still using a peer-to-peer path: ${sockets.join(" ")}`);
   }
-  console.log("FIVE_TOGETHER", room, "broker", [...peer.urls][0].split("?")[0]);
-  await same.pages[0].screenshot({ path: `${shots}/roster_five_players.png` });
+  if (!sockets.some((url) => url.includes("relay.open-rooms.dev") || url.includes("itty.ws"))) {
+    throw new Error(`no public relay socket: ${sockets.join(" ") || "none"}`);
+  }
+  if (peer.errors.some((err) => err.includes("webrtc blocked"))) {
+    throw new Error(`game tried to open WebRTC: ${peer.errors.join(" | ")}`);
+  }
+  console.log("FIVE_TOGETHER", room, "relay", sockets.find((url) => url.includes("relay.open-rooms.dev") || url.includes("itty.ws")));
+  await same.pages[0].screenshot({ path: `${shots}/roster_relay_five.png` });
 
   const fifthId = await other.page.evaluate(() => sessionStorage.getItem("bang-player-id"));
   await other.page.close();
@@ -159,7 +184,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 400));
   }
   if (!offline) throw new Error("offline mark did not appear on the roster");
-  await same.pages[0].screenshot({ path: `${shots}/roster_player_offline.png` });
+  await same.pages[0].screenshot({ path: `${shots}/roster_relay_offline.png` });
   console.log("OFFLINE_MARK", offline.people.map((p) => `${p.name}:${p.presence}`).join(" "));
 
   const returned = await other.context.newPage();
@@ -182,7 +207,20 @@ try {
     await page.waitForSelector("[data-char]", { timeout: 25000 });
     await page.locator("[data-char]").first().click();
   }
-  for (const page of playing) await page.waitForSelector("[data-screen=play]", { timeout: 25000 });
+  try {
+    for (const page of playing) await page.waitForSelector("[data-screen=play]", { timeout: 25000 });
+  } catch (err) {
+    const stuck = [];
+    for (const page of playing) {
+      stuck.push(await page.evaluate(() => ({
+        screen: document.querySelector("#app")?.dataset.screen,
+        status: document.querySelector("#app")?.dataset.status,
+        text: document.querySelector(".topbar p, .tagline")?.textContent || "",
+        chars: document.querySelectorAll("[data-char]").length,
+      })));
+    }
+    throw new Error(`${err.message}\n${JSON.stringify(stuck, null, 2)}`);
+  }
 
   const guest = same.pages.find((page) => page !== host);
   const guestName = names[same.pages.indexOf(guest)];

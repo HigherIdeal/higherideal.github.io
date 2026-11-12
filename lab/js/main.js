@@ -1,11 +1,11 @@
-import { ENTRY_CODE } from "./config.js?v=8";
-import { connect } from "./net.js?v=8";
-import { mount } from "./ui.js?v=8";
+import { ENTRY_CODE } from "./config.js?v=9";
+import { connect } from "./net.js?v=9";
+import { mount } from "./ui.js?v=9";
 
 const app = document.querySelector("#app");
 let link = null;
 let view = null;
-let status = null;
+let status = { mode: "entry", text: "" };
 let toast = "";
 let entryError = "";
 let savedName = localStorage.getItem("bang-nickname") || "";
@@ -58,7 +58,7 @@ function enter(nickname, code) {
     playerId = crypto.randomUUID();
     sessionStorage.setItem("bang-player-id", playerId);
   }
-  status = { mode: "search", text: "방을 찾는 중…" };
+  status = { mode: "search", text: "중계에 연결하는 중…" };
   link = connect({
     playerId,
     nickname,
