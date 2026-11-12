@@ -666,7 +666,7 @@ body:has(.table-screen) { background: #000; }
 .table-screen, .table-wrap, .board, .felt { background: transparent !important; box-shadow: none !important; }
 .table-screen .dock { background: transparent; border: 0; }
 .table-screen .board::before { display: none; }
-.board.is-webgl, .board.is-webgl .felt { pointer-events: none; }
+.board.is-webgl, .board.is-webgl .felt { pointer-events: none; perspective: none; transform: none; }
 .board.is-webgl .seat-btn,
 .board.is-webgl .hand-dock,
 .board.is-webgl .hand-dock * { pointer-events: auto; }

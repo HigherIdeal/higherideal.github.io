@@ -1,6 +1,6 @@
-import * as THREE from "../vendor/three.module.js?v=17";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=17";
-import { cameraRig, solveProjectedLayout } from "./layout.js?v=17";
+import * as THREE from "../vendor/three.module.js?v=18";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=18";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=18";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -76,7 +76,7 @@ export function mountTable(canvas) {
   }
   renderer.setClearColor(0x000000, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 0.92;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -130,17 +130,18 @@ export function mountTable(canvas) {
   const starGeo = new THREE.ExtrudeGeometry(starShape(), {
     depth: 0.045, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.01, bevelSegments: 1,
   });
-  const blackMat = new THREE.MeshStandardMaterial({ color: 0x161616, metalness: 0.94, roughness: 0.1 });
+  const blackMat = new THREE.MeshStandardMaterial({ color: 0x6a6a6a, metalness: 1, roughness: 0.08 });
+  const rimMat = new THREE.MeshBasicMaterial({ color: 0xfff6e4, side: THREE.BackSide, toneMapped: false });
   const goldMat = new THREE.MeshStandardMaterial({ color: 0xf0c14a, metalness: 0.78, roughness: 0.22, emissive: 0x8a6414, emissiveIntensity: 0.4 });
-  const dashes = Array.from({ length: 16 }, () => {
-      const dash = new THREE.Mesh(
-      new THREE.SphereGeometry(0.055, 10, 8),
-      new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 1 }),
-    );
+  const dashMat = new THREE.MeshBasicMaterial({ color: 0xff2e00, toneMapped: false, fog: false, transparent: true, opacity: 1 });
+  const dashes = Array.from({ length: 22 }, () => {
+    const dash = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), dashMat.clone());
     dash.visible = false;
+    dash.frustumCulled = false;
     scene.add(dash);
     return dash;
   });
+  const dashAxis = new THREE.Vector3(0, 0, 1);
   const turnLight = new THREE.SpotLight(0xfff7e8, 0, 7.5, 0.38, 0.5, 1);
   scene.add(turnLight);
   scene.add(turnLight.target);
@@ -153,7 +154,7 @@ export function mountTable(canvas) {
   let height = 1;
   let yaw = 0;
   let pitch = 0;
-  let distMul = 0.72;
+  let distMul = 1;
   let panX = 0;
   let panZ = 0;
   let focusId = "";
@@ -189,7 +190,7 @@ export function mountTable(canvas) {
   function resetView() {
     yaw = 0;
     pitch = 0;
-    distMul = 0.72;
+    distMul = 1;
     panX = 0;
     panZ = 0;
     focusId = "";
@@ -219,23 +220,15 @@ export function mountTable(canvas) {
   function cardMesh(texture, w, h, mode) {
     const material = cardMaterial(texture, back);
     if (mode === "reach") {
-      material.color.set(0xfff6ea);
-      material.emissive.set(0x6b4424);
-      material.emissiveIntensity = 0.16;
+      material.color.set(0xfff8ef);
+      material.emissive.set(0x3a2412);
+      material.emissiveIntensity = 0.045;
     } else if (mode === "dim") {
-      material.color.set(0x8a8478);
+      material.color.set(0xa39c92);
       material.emissive.set(0x000000);
       material.emissiveIntensity = 0;
     }
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), material);
-    if (mode === "reach") {
-      const rim = new THREE.Mesh(
-        new THREE.PlaneGeometry(w * 1.12, h * 1.12),
-        new THREE.MeshBasicMaterial({ color: 0xffb15a, transparent: true, opacity: 0.38, depthWrite: false }),
-      );
-      rim.position.z = -0.01;
-      mesh.add(rim);
-    }
     mesh.rotation.x = -Math.PI / 2;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -263,8 +256,9 @@ export function mountTable(canvas) {
       const mesh = cardMesh(texture, zone.world.w, zone.world.d, mode);
       mesh.position.set(zone.world.x, mode === "reach" ? 0.08 : 0.03, zone.world.z);
       mesh.rotation.order = "YXZ";
-      mesh.rotation.y = Math.atan2(-zone.world.x, -zone.world.z);
+      mesh.rotation.y = playerId ? cardYaw(zone.world.x, zone.world.z) : Math.atan2(-zone.world.x, -zone.world.z);
       mesh.rotation.x = -Math.PI / 2;
+      mesh.userData.kind = zone.kind;
       mesh.userData.baseY = mesh.position.y;
       mesh.userData.image = typeof texture === "string" ? texture : (texture?.image?.toDataURL?.() || "");
       if (playerId) {
@@ -290,7 +284,7 @@ export function mountTable(canvas) {
       if (eq.jail && eq.dynamite) put(zone("dynamite"), loadTexture(CARD_INFO[eq.dynamite.type]?.image, textures), player.id, mode);
       const anchor = zone("character");
       if (anchor?.world && reach) {
-        const pool = new THREE.PointLight(0xffb56a, 1.15, 1.7, 2);
+        const pool = new THREE.PointLight(0xffc48a, 0.28, 1.25, 2);
         pool.position.set(anchor.world.x, 0.22, anchor.world.z);
         scene.add(pool);
         lights.set(player.id, pool);
@@ -302,14 +296,18 @@ export function mountTable(canvas) {
       const spot = layout.leaves.find((item) => item.seat === index && item.kind === "character");
       if (!spot?.world) return;
       const sheriff = player.role === "sheriff";
-      const marker = new THREE.Mesh(sheriff ? starGeo : new THREE.SphereGeometry(0.085, 28, 18), sheriff ? goldMat : blackMat);
+      const marker = new THREE.Mesh(sheriff ? starGeo : new THREE.SphereGeometry(0.07, 32, 20), sheriff ? goldMat : blackMat);
       if (sheriff) {
         marker.rotation.x = -Math.PI / 2;
-        marker.scale.setScalar(0.38);
+        marker.scale.setScalar(0.34);
+      } else {
+        const rim = new THREE.Mesh(new THREE.SphereGeometry(0.07, 32, 20), rimMat);
+        rim.scale.setScalar(1.16);
+        marker.add(rim);
       }
-      marker.position.set(spot.world.x, 1.05, spot.world.z);
+      marker.position.set(spot.world.x, 0.46, spot.world.z);
       marker.userData.bob = index * 0.7;
-      marker.userData.baseY = 1.05;
+      marker.userData.baseY = 0.46;
       marker.userData.playerId = player.id;
       scene.add(marker);
       markers.set(player.id, marker);
@@ -366,13 +364,19 @@ export function mountTable(canvas) {
         dash.visible = false;
         return;
       }
-      const t = ((index / dashes.length) + time * 0.45) % 1;
-      dash.position.copy(arcPoint(from.position, goal.position, t));
+      const t = ((index / dashes.length) + time * 0.55) % 1;
+      const next = ((index + 0.35) / dashes.length + time * 0.55) % 1;
+      const at = arcPoint(from.position, goal.position, t);
+      const ahead = arcPoint(from.position, goal.position, next > t ? next : Math.min(0.999, t + 0.02));
+      dash.position.copy(at);
+      const tangent = ahead.clone().sub(at);
+      if (tangent.lengthSq() > 1e-6) dash.quaternion.setFromUnitVectors(dashAxis, tangent.normalize());
+      const px = worldPerPixel(at);
+      dash.scale.set(3.2 * px, 3.2 * px, 13 * px);
       dash.visible = true;
-      const fade = arc.phase === "preview" ? 0.38 : Math.max(0, 1 - Math.max(0, age - 0.45) / 0.9);
-      dash.material.opacity = fade;
-      dash.scale.setScalar(arc.phase === "flash" && age < 0.25 ? 1.6 : 1);
+      dash.material.opacity = arc.phase === "preview" ? 0.72 : Math.max(0, 1 - Math.max(0, age - 0.35) / 1);
     });
+    publishSpots();
     const current = markers.get(view?.currentId);
     if (current && view?.phase === "play") {
       turnLight.intensity = 14;
@@ -384,20 +388,61 @@ export function mountTable(canvas) {
     renderer.render(scene, camera);
   }
 
+  function worldPerPixel(at) {
+    const dist = Math.max(0.2, camera.position.distanceTo(at));
+    return (2 * Math.tan((camera.fov * Math.PI / 180) / 2) * dist) / Math.max(1, height);
+  }
+
+  function projectLocal(mesh, x, y) {
+    const point = new THREE.Vector3(x, y, 0).applyMatrix4(mesh.matrixWorld).project(camera);
+    return {
+      x: (point.x * 0.5 + 0.5) * width,
+      y: (-point.y * 0.5 + 0.5) * height,
+    };
+  }
+
+  function cardScreenBox(mesh) {
+    const w = mesh.geometry.parameters.width;
+    const h = mesh.geometry.parameters.height;
+    mesh.updateMatrixWorld();
+    const corners = [[-w / 2, -h / 2], [w / 2, -h / 2], [-w / 2, h / 2], [w / 2, h / 2]].map(([x, y]) => projectLocal(mesh, x, y));
+    const center = projectLocal(mesh, 0, 0);
+    return {
+      left: Math.min(...corners.map((point) => point.x)),
+      top: Math.min(...corners.map((point) => point.y)),
+      right: Math.max(...corners.map((point) => point.x)),
+      bottom: Math.max(...corners.map((point) => point.y)),
+      anchorX: center.x,
+      anchorY: Math.max(...corners.map((point) => point.y)),
+    };
+  }
+
+  function publishSpots() {
+    const spots = [];
+    const boxes = [];
+    for (const mesh of groups.values()) {
+      if (mesh.userData.kind !== "character" || !mesh.userData.playerId) continue;
+      const box = cardScreenBox(mesh);
+      const chipW = 108;
+      spots.push({
+        id: mesh.userData.playerId,
+        x: box.anchorX - chipW / 2,
+        y: box.anchorY + 1,
+        w: chipW,
+        h: 36,
+      });
+      boxes.push({ id: mesh.userData.playerId, ...box });
+    }
+    globalThis.__bangBoxes = boxes;
+    if (typeof onSpots === "function") onSpots(spots);
+    return spots;
+  }
+
   function update(next, aim) {
     aimIds = new Set(aim || []);
     resize();
     rebuild(next);
-    const order = groups.__order || [];
-    const layout = groups.__layout;
-    if (!layout) return [];
-    return layout.leaves.filter((zone) => zone.kind === "label").map((zone) => ({
-      id: order[zone.seat],
-      x: zone.x,
-      y: zone.y,
-      w: zone.w,
-      h: zone.h,
-    }));
+    return publishSpots();
   }
 
   function pick(clientX, clientY) {
@@ -472,9 +517,13 @@ export function mountTable(canvas) {
   canvas.addEventListener("pointerup", endFinger);
   canvas.addEventListener("pointercancel", (event) => fingers.delete(event.pointerId));
   let onPeek = null;
+  let onSpots = null;
 
   resize();
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", () => {
+    resize();
+    if (view) rebuild(view);
+  });
   tick();
   return {
     update,
@@ -482,6 +531,7 @@ export function mountTable(canvas) {
     resize,
     resetView,
     setPeek(fn) { onPeek = fn; },
+    setSpots(fn) { onSpots = fn; },
     stop() {
       running = false;
       renderer.dispose();

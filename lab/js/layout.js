@@ -31,9 +31,9 @@ function norm(a) {
 
 export function cameraRig(width, height) {
   const aspect = width / Math.max(1, height);
-  const fov = 52 * Math.PI / 180;
-  const tilt = 48 * Math.PI / 180;
-  const dist = aspect > 1.2 ? 6.2 : 7.2;
+  const fov = 46 * Math.PI / 180;
+  const tilt = (aspect > 1.2 ? 56 : 62) * Math.PI / 180;
+  const dist = aspect > 1.2 ? 5.8 : 5.4;
   return {
     fov,
     aspect,
@@ -79,11 +79,15 @@ export function screenToTable(cam, px, py, width, height) {
   return add(cam.position, mul(dir, k));
 }
 
+function handReserve(width) {
+  return width >= 800 ? 132 : 118;
+}
+
 function playField(width, height) {
   const wide = width >= 800;
-  const top = 64;
-  const bottom = wide ? 172 : Math.round(height * 0.33);
-    const side = wide ? 28 : 10;
+  const top = wide ? 54 : 48;
+  const side = wide ? 20 : 6;
+  const bottom = handReserve(width);
   return {
     x: side,
     y: top,
@@ -92,22 +96,67 @@ function playField(width, height) {
   };
 }
 
+/** Card top points at the table center, matching the mesh yaw. */
+export function cardYaw(x, z) {
+  return Math.atan2(-x, -z) + Math.PI;
+}
+
 function rectsOverlap(a, b, pad = 0) {
   return a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
 }
 
-function boxOf(cam, center, cardW, cardD, width, height) {
-  return projectCard(cam, center, cardW, cardD, width, height);
+function orientedBox(cam, center, cardW, cardD, width, height) {
+  const len = Math.hypot(center.x, center.z) || 1;
+  const ux = -center.x / len;
+  const uz = -center.z / len;
+  const rx = uz;
+  const rz = -ux;
+  const corners = [];
+  for (const sx of [-cardW / 2, cardW / 2]) {
+    for (const sz of [-cardD / 2, cardD / 2]) {
+      corners.push(projectPoint(cam, {
+        x: center.x + rx * sx + ux * sz,
+        y: 0.02,
+        z: center.z + rz * sx + uz * sz,
+      }, width, height));
+    }
+  }
+  if (corners.some((point) => !point)) return null;
+  const xs = corners.map((point) => point.x);
+  const ys = corners.map((point) => point.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+function boxOf(cam, center, cardW, cardD, width, height, oriented = false) {
+  return oriented
+    ? orientedBox(cam, center, cardW, cardD, width, height)
+    : projectCard(cam, center, cardW, cardD, width, height);
 }
 
 export function placeLayout(width, height, count, cardW, radiusScale = 1) {
   const cam = cameraRig(width, height);
   const play = playField(width, height);
-  const cx = play.x + play.w / 2;
-  const cy = play.y + play.h / 2;
   const cardD = cardW * 1.45;
-  const rx = play.w * 0.36 * radiusScale;
-  const ry = play.h * 0.3 * radiusScale;
+  const nearWorld = screenToTable(cam, play.x + play.w / 2, play.y + play.h - 2, width, height);
+  const farWorld = screenToTable(cam, play.x + play.w / 2, play.y + 2, width, height);
+  const sideWorld = screenToTable(cam, play.x + 2, play.y + play.h / 2, width, height);
+  if (!nearWorld || !farWorld || !sideWorld) return null;
+  const nearBox = orientedBox(cam, nearWorld, cardW, cardD, width, height);
+  const farBox = orientedBox(cam, farWorld, cardW, cardD, width, height);
+  const sideBox = orientedBox(cam, sideWorld, cardW, cardD, width, height);
+  if (!nearBox || !farBox || !sideBox) return null;
+  const sideInset = sideBox.w / 2 + (width >= 800 ? 14 : 6);
+  const topInset = farBox.h / 2 + 10;
+  const botInset = nearBox.h / 2 + 28;
+  const availW = play.w - sideInset * 2;
+  const availH = play.h - topInset - botInset;
+  if (availW < 48 || availH < 48) return null;
+  const rx = (availW / 2) * radiusScale;
+  const ry = (availH / 2) * radiusScale;
+  const cx = play.x + play.w / 2;
+  const cy = play.y + topInset + availH / 2;
   const seats = [];
   const leaves = [];
   for (let i = 0; i < count; i += 1) {
@@ -115,13 +164,13 @@ export function placeLayout(width, height, count, cardW, radiusScale = 1) {
     const sx = cx + Math.cos(angle) * rx;
     const sy = cy + Math.sin(angle) * ry;
     const world = screenToTable(cam, sx, sy, width, height);
-    if (!world || !boxOf(cam, world, cardW, cardD, width, height)) return null;
-    const probeBox = boxOf(cam, world, cardW, cardD, width, height);
+    if (!world || !boxOf(cam, world, cardW, cardD, width, height, true)) return null;
+    const probeBox = boxOf(cam, world, cardW, cardD, width, height, true);
     const stepX = probeBox.w + 12;
     const put = (kind, px, py) => {
       const center = screenToTable(cam, px, py, width, height);
       if (!center) return null;
-      const box = boxOf(cam, { x: center.x, y: 0.02, z: center.z }, cardW, cardD, width, height);
+      const box = boxOf(cam, { x: center.x, y: 0.02, z: center.z }, cardW, cardD, width, height, true);
       if (!box) return null;
       return {
         id: `seat-${i}-${kind}`,
@@ -131,7 +180,7 @@ export function placeLayout(width, height, count, cardW, radiusScale = 1) {
         world: { x: center.x, y: 0.02, z: center.z, w: cardW, d: cardD },
       };
     };
-    const compact = count >= 6 || (width < 800 && count % 2 === 1);
+    const compact = true;
     const role = compact ? null : put("role", sx - stepX / 2, sy);
     const character = put("character", compact ? sx : sx + stepX / 2, sy);
     if (!character || (!compact && !role)) return null;
@@ -225,20 +274,22 @@ export function placeLayout(width, height, count, cardW, radiusScale = 1) {
     return null;
   }
   leaves.push(deck, discard);
+  const limit = {
+    left: width >= 800 ? 12 : 2,
+    top: width >= 800 ? 46 : 42,
+    right: width - (width >= 800 ? 12 : 2),
+    bottom: height - handReserve(width) + 4,
+  };
   const inside = leaves.every((zone) => {
-    if (zone.kind === "label") return zone.y > -40 && zone.y < height;
-    const gutter = width >= 800 ? 36 : 6;
-    const floor = height - (width >= 800 ? 160 : Math.round(height * 0.34));
-    return zone.x >= gutter && zone.y >= 36
-      && zone.x + zone.w <= width - gutter
-      && zone.y + zone.h <= floor;
+    if (zone.kind === "label") return zone.y >= limit.top - 8 && zone.y + zone.h <= limit.bottom + 8 && zone.x >= -8 && zone.x + zone.w <= width + 8;
+    return zone.x >= limit.left && zone.y >= limit.top
+      && zone.x + zone.w <= limit.right
+      && zone.y + zone.h <= limit.bottom;
   });
   if (!inside) {
     const bad = leaves.find((zone) => {
-      if (zone.kind === "label") return !(zone.y > -40 && zone.y < height);
-      const gutter = width >= 800 ? 36 : 6;
-      const floor = height - (width >= 800 ? 160 : Math.round(height * 0.34));
-      return !(zone.x >= gutter && zone.y >= 36 && zone.x + zone.w <= width - gutter && zone.y + zone.h <= floor);
+      if (zone.kind === "label") return !(zone.y >= limit.top - 8 && zone.y + zone.h <= limit.bottom + 8);
+      return !(zone.x >= limit.left && zone.y >= limit.top && zone.x + zone.w <= limit.right && zone.y + zone.h <= limit.bottom);
     });
     if (globalThis.__WHY) console.log("inside", bad && bad.id, bad && [Math.round(bad.x), Math.round(bad.y), Math.round(bad.w), Math.round(bad.h)].join(","));
     return null;
@@ -249,32 +300,26 @@ export function placeLayout(width, height, count, cardW, radiusScale = 1) {
 export function solveProjectedLayout(width, height, playerCount) {
   const count = Math.max(1, Math.min(7, playerCount));
   const play = playField(width, height);
-  const fits = (cardW) => {
-    let bestFit = null;
-    let loR = 0.34;
-    let hiR = 1;
-    for (let step = 0; step < 10; step += 1) {
-      const mid = (loR + hiR) / 2;
-      const laid = placeLayout(width, height, count, cardW, mid);
-      if (laid && !layoutOverlaps(laid.leaves, 2)) {
-        bestFit = laid;
-        loR = mid;
-      } else hiR = mid;
-    }
-    return bestFit;
-  };
-  let lo = 0.12;
-  let hi = 2.8;
   let best = null;
-  for (let step = 0; step < 16; step += 1) {
-    const mid = (lo + hi) / 2;
-    const laid = fits(mid);
-    if (laid) {
-      best = laid;
-      lo = mid;
-    } else hi = mid;
+  for (let radius = 100; radius >= 86; radius -= 2) {
+    const radiusScale = radius / 100;
+    let lo = 0.18;
+    let hi = 3.6;
+    let fit = null;
+    for (let step = 0; step < 14; step += 1) {
+      const mid = (lo + hi) / 2;
+      const laid = placeLayout(width, height, count, mid, radiusScale);
+      if (laid && !layoutOverlaps(laid.leaves, 2)) {
+        fit = laid;
+        lo = mid;
+      } else hi = mid;
+    }
+    if (fit) {
+      best = fit;
+      break;
+    }
   }
-  if (!best) best = placeLayout(width, height, count, 0.12) || { seats: [], leaves: [], deck: null, discard: null, scale: 0.12, play, deckCenter: null };
+  if (!best) best = placeLayout(width, height, count, 0.18, 0.86) || { seats: [], leaves: [], deck: null, discard: null, scale: 0.18, play, deckCenter: null };
   return { ...best, play, width, height };
 }
 

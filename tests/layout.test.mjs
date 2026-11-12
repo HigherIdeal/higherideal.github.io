@@ -53,6 +53,35 @@ test("four seats sit on a centered ellipse and the near cards stay large", () =>
   assert.ok(near.h / near.w < 1.35, "the near card is not face-on");
 });
 
+test("seven players share one ring, with you at the bottom", () => {
+  for (const [width, height] of views) {
+    const layout = solveProjectedLayout(width, height, 7);
+    const seats = layout.seats;
+    assert.equal(seats.length, 7);
+    const me = seats[0];
+    const left = seats[1];
+    const right = seats[6];
+    assert.ok(Math.abs(me.cx - width / 2) < 40, "you are at the bottom center");
+    assert.ok(left.cx < me.cx - 20 && right.cx > me.cx + 20, "neighbours sit on either side");
+    assert.ok(me.cy > left.cy && me.cy > right.cy, "neighbours continue up the ring");
+    const dist = (a, b) => Math.hypot(a.cx - b.cx, a.cy - b.cy);
+    const nearest = Math.min(...seats.slice(1).map((seat) => dist(me, seat)));
+    assert.ok(dist(me, left) <= nearest + 1 && dist(me, right) <= nearest + 1);
+    const cards = layout.leaves.filter((zone) => zone.kind !== "label");
+    for (const zone of cards) {
+      assert.ok(zone.x >= -1 && zone.y >= -1, zone.id);
+      assert.ok(zone.x + zone.w <= width + 1, zone.id);
+      assert.ok(zone.y + zone.h <= height + 1, zone.id);
+    }
+  }
+  const phone = solveProjectedLayout(412, 915, 7);
+  const ys = phone.seats.map((seat) => seat.cy);
+  const xs = phone.seats.map((seat) => seat.cx);
+  assert.ok(Math.max(...ys) - Math.min(...ys) > Math.max(...xs) - Math.min(...xs), "the phone ring is taller than it is wide");
+  const near = phone.leaves.find((zone) => zone.kind === "character" && zone.seat === 0);
+  assert.ok(near.w > 60, `phone cards stay large (${near.w})`);
+});
+
 test("the table origin projects to the middle of the view", () => {
   const width = 1888;
   const height = 1000;

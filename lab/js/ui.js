@@ -1,8 +1,8 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=17";
-import { naturalKorean } from "./engine.js?v=17";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=17";
-import { solveProjectedLayout } from "./layout.js?v=17";
-import { mountTable } from "./table3d.js?v=17";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=18";
+import { naturalKorean } from "./engine.js?v=18";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=18";
+import { solveProjectedLayout } from "./layout.js?v=18";
+import { mountTable } from "./table3d.js?v=18";
 
 const ui = {
   selected: null,
@@ -969,7 +969,12 @@ function syncTable(app, view) {
   if (webgl) {
     const legal = ui.selected ? view.players.filter((p) => isTarget(view, p.id)).map((p) => p.id) : [];
     projected = ui.gl.update(view, legal);
+    ui.gl.setSpots?.((spots) => {
+      const live = app.querySelector(".felt");
+      if (live && ui.latestView) placeFelt(live, ui.latestView, spots, true);
+    });
   }
+  ui.latestView = view;
   placeFelt(felt, view, projected, webgl);
 }
 
@@ -978,6 +983,7 @@ function placeFelt(felt, view, projected, webgl) {
   const me = living.find((p) => p.id === view.yourId);
   const ordered = me ? [me, ...living.filter((p) => p.id !== me.id)] : living;
   const layout = solveProjectedLayout(window.innerWidth, window.innerHeight, ordered.length);
+  const placed = [];
   ordered.forEach((player, index) => {
     const node = felt.querySelector(player.id === view.yourId ? ".self-tray" : `.seat[data-player="${player.id}"]`);
     if (!node) return;
@@ -988,7 +994,20 @@ function placeFelt(felt, view, projected, webgl) {
     node.style.width = `${spot.w}px`;
     node.style.height = `${spot.h || 28}px`;
     node.style.transform = "none";
+    placed.push({ node, spot });
   });
+  if (webgl && placed.length) {
+    const sample = placed[0];
+    const rect = sample.node.getBoundingClientRect();
+    const dx = rect.left - sample.spot.x;
+    const dy = rect.top - sample.spot.y;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+      for (const item of placed) {
+        item.node.style.left = `${item.spot.x - dx}px`;
+        item.node.style.top = `${item.spot.y - dy}px`;
+      }
+    }
+  }
   const piles = felt.querySelector(".center-piles");
   if (piles && layout.deck && !webgl) {
     piles.style.left = `${layout.deck.x}px`;

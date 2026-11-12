@@ -29,9 +29,12 @@ try {
     await page.locator("[data-char]").first().click();
   }
   let turn = null;
-  for (const page of pages) {
-    await page.waitForSelector("[data-screen=play]", { timeout: 30000 });
-    if (await page.locator("#app").getAttribute("data-your-turn") === "1") turn = page;
+  for (const page of pages) await page.waitForSelector("[data-screen=play]", { timeout: 30000 });
+  for (let attempt = 0; attempt < 24 && !turn; attempt += 1) {
+    for (const page of pages) {
+      if (await page.locator("#app").getAttribute("data-your-turn") === "1") turn = page;
+    }
+    if (!turn) await pages[0].waitForTimeout(500);
   }
   if (!turn) throw new Error("nobody is in their play phase");
   await turn.waitForTimeout(400);
@@ -56,9 +59,24 @@ try {
   if (!chips.length || chips.some((chip) => !chip.bullets || /접속|생명|\//.test(chip.text))) {
     throw new Error(`chips ${JSON.stringify(chips)}`);
   }
+  const measure = () => turn.evaluate(() => {
+    const boxes = (globalThis.__bangBoxes || []).map((box) => ({
+      l: Math.round(box.left), t: Math.round(box.top), r: Math.round(box.right), b: Math.round(box.bottom),
+    }));
+    const chips = [...document.querySelectorAll(".seat, .self-tray")].map((node) => ({
+      top: Math.round(parseFloat(node.style.top) || 0),
+      left: Math.round(parseFloat(node.style.left) || 0),
+    }));
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const inside = boxes.every((box) => box.l >= -2 && box.t >= -2 && box.r <= w + 2 && box.b <= h + 2);
+    return { w, h, inside, boxes, chips };
+  });
+  console.log("DESK", JSON.stringify(await measure()));
   await turn.screenshot({ path: "/opt/cursor/artifacts/table_seven_desktop.png" });
   await turn.setViewportSize({ width: 412, height: 915 });
-  await turn.waitForTimeout(600);
+  await turn.waitForTimeout(900);
+  console.log("PHONE", JSON.stringify(await measure()));
   await turn.screenshot({ path: "/opt/cursor/artifacts/table_seven_phone.png" });
   console.log("SEVEN_OK", chips.length, await turn.locator("#app").getAttribute("data-renderer"));
 } finally {
