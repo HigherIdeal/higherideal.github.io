@@ -94,6 +94,9 @@ test("Jourdonnais checks a heart before the Bang lands", () => {
   willy.hand = [card("b1", "bang", "spades", "A")];
   state.deck.push(card("heart", "missed", "hearts", "2"));
   assert.equal(dispatch(state, willy.id, { type: "play", cardId: "b1", targetId: j.id }).ok, true);
+  assert.equal(state.prompt?.kind, "miss");
+  assert.ok(state.prompt.checks.includes("jourdonnais"));
+  assert.equal(dispatch(state, j.id, { type: "respond", choice: "jourdonnais" }).ok, true);
   assert.match(state.cues.map((c) => c.text).join(" "), /주르도네/);
   assert.ok(j.hp === j.maxHp);
 });
@@ -123,6 +126,11 @@ test("El Gringo steals a card from the shooter", () => {
   const before = gringo.hand.length;
   assert.equal(dispatch(state, willy.id, { type: "play", cardId: "b1", targetId: gringo.id }).ok, true);
   assert.equal(dispatch(state, gringo.id, { type: "respond", choice: "take" }).ok, true);
+  assert.equal(state.prompt?.kind, "hand");
+  assert.equal(state.prompt.reason, "elgringo");
+  const index = willy.hand.findIndex((c) => c.id === "keep");
+  assert.equal(dispatch(state, gringo.id, { type: "respond", index }).ok, true);
+  assert.ok(gringo.hand.some((c) => c.id === "keep"));
   assert.ok(gringo.hand.length > before);
   assert.match(state.cues.map((c) => c.text).join(" "), /엘 그/);
 });
@@ -187,8 +195,13 @@ test("Black Jack reveals the second card", () => {
   state.turnPhase = "draw";
   state.prompt = null;
   state.deck.push(card("red", "bang", "hearts", "A"), card("first", "missed", "clubs", "4"));
+  const before = jack.hand.length;
   assert.equal(dispatch(state, jack.id, { type: "draw" }).ok, true);
+  assert.equal(state.prompt?.kind, "reveal");
+  assert.equal(jack.hand.length, before + 2);
+  assert.equal(dispatch(state, jack.id, { type: "respond", choice: "reveal" }).ok, true);
   assert.match((state.cues || []).map((c) => c.text).join(" "), /블랙 잭/);
+  assert.equal(jack.hand.length, before + 3);
 });
 
 test("Jesse Jones can take the first card from a hand", () => {

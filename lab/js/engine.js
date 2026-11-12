@@ -9,8 +9,8 @@ import {
   cardLabel,
   characterById,
   rolesForCount,
-} from "./cards.js?v=27";
-import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=27";
+} from "./cards.js?v=28";
+import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=28";
 
 const WEAPONS = new Set(WEAPON_TYPES);
 
@@ -594,24 +594,14 @@ function drawTwo(state, first) {
   }
   const second = drawOne(state);
   if (second) drawn.push(second);
-  if (p.character === "blackjack" && second) {
-    const red = second.suit === "hearts" || second.suit === "diamonds";
-    log(state, `블랙 잭의 두 번째 카드는 ${cardLabel(second)}입니다.${red ? " 빨간색이라 한 장 더 뽑습니다." : ""}`);
-    cue(state, `${p.nickname} · 블랙 잭 — 두 번째 카드 ${cardLabel(second)}${red ? ", 한 장 더" : ""}`);
-    showFlip(state, {
-      cards: [second],
-      caption: `${p.nickname} · 블랙 잭 ${cardLabel(second)} — ${red ? "한 장 더!" : "그대로"}`,
-      to: "hand",
-      ownerId: p.id,
-    });
-    if (red) {
-      const third = drawOne(state);
-      if (third) drawn.push(third);
-    }
-  } else {
-    log(state, `${p.nickname} 님이 카드를 ${drawn.length}장 뽑았습니다.`);
-  }
   for (const c of drawn) if (c) p.hand.push(c);
+  if (p.character === "blackjack" && drawn[1]) {
+    state.prompt = { kind: "reveal", playerId: p.id, cardId: drawn[1].id };
+    state.turnPhase = "react";
+    log(state, `${p.nickname} 님이 블랙 잭의 두 번째 카드를 공개할 차례입니다.`);
+    return;
+  }
+  log(state, `${p.nickname} 님이 카드를 ${drawn.length}장 뽑았습니다.`);
   enterPlay(state);
 }
 
@@ -932,7 +922,30 @@ function respond(state, playerId, action) {
   if (prompt.kind === "discard-bang") return chooseDiscardBang(state, playerId, action);
   if (prompt.kind === "save") return chooseSave(state, playerId, action);
   if (prompt.kind === "store") return chooseStore(state, playerId, action.cardId);
+  if (prompt.kind === "reveal") return chooseReveal(state, playerId);
   return "응답할 수 없습니다.";
+}
+
+function chooseReveal(state, playerId) {
+  const p = player(state, playerId);
+  const card = p?.hand.find((c) => c.id === state.prompt.cardId);
+  if (!card) return "공개할 카드가 없습니다.";
+  const red = card.suit === "hearts" || card.suit === "diamonds";
+  log(state, `블랙 잭의 두 번째 카드는 ${cardLabel(card)}입니다.${red ? " 빨간색이라 한 장 더 뽑습니다." : ""}`);
+  cue(state, `${p.nickname} · 블랙 잭 — 두 번째 카드 ${cardLabel(card)}${red ? ", 한 장 더" : ""}`);
+  showFlip(state, {
+    cards: [card],
+    caption: `${p.nickname} · 블랙 잭 ${cardLabel(card)} — ${red ? "한 장 더!" : "그대로"}`,
+    to: "hand",
+    ownerId: p.id,
+  });
+  state.prompt = null;
+  if (red) {
+    const third = drawOne(state);
+    if (third) p.hand.push(third);
+  }
+  enterPlay(state);
+  return null;
 }
 
 function chooseLucky(state, playerId, cardId) {
@@ -1024,7 +1037,58 @@ function chooseHand(state, playerId, action) {
   const target = player(state, prompt.targetId);
   const p = player(state, playerId);
   if (!target || !p) return "그 손패는 가져올 수 없습니다.";
+  if (prompt.reason === "elgringo") return takeGringo(state, action.index);
   return takeHiddenHand(state, p, target, action.index, prompt.reason, prompt.cardId);
+}
+
+function openGringo(state) {
+  const g = state.gringo;
+  const src = g && player(state, g.sourceId);
+  if (!g || !src?.hand.length || g.left <= 0) {
+    finishGringo(state);
+    return;
+  }
+  state.prompt = { kind: "hand", playerId: g.playerId, targetId: g.sourceId, count: src.hand.length, reason: "elgringo" };
+  state.turnPhase = "react";
+  log(state, `${player(state, g.playerId).nickname} 님이 가져온 손패를 고르고 있습니다.`);
+}
+
+function takeGringo(state, index) {
+  const g = state.gringo;
+  const src = g && player(state, g.sourceId);
+  const thief = g && player(state, g.playerId);
+  if (!g || !src || !thief || !Number.isInteger(index) || index < 0 || index >= src.hand.length) return "그 카드는 고를 수 없습니다.";
+  const card = src.hand.splice(index, 1)[0];
+  thief.hand.push(card);
+  log(state, `${thief.nickname} 님이 ${src.nickname} 님의 손패를 한 장 가져왔습니다.`);
+  cue(state, `${thief.nickname} · 엘 그린고 — 손패를 가져옵니다`);
+  showFlip(state, {
+    cards: [card],
+    caption: `${thief.nickname} · 엘 그린고 — 손패 한 장을 가져감`,
+    to: "hand",
+    ownerId: thief.id,
+    secret: true,
+    know: [thief.id, src.id],
+  });
+  suzy(state, src);
+  g.left -= 1;
+  if (g.left > 0 && src.hand.length) {
+    openGringo(state);
+    return null;
+  }
+  finishGringo(state);
+  return null;
+}
+
+function finishGringo(state) {
+  const g = state.gringo;
+  state.gringo = null;
+  state.prompt = null;
+  if (!g) return;
+  const t = player(state, g.playerId);
+  if (g.dying && t?.alive && t.hp <= 0) eliminate(state, t, g.killerId);
+  if (state.phase === "end") return;
+  continueResume(state, g.resume);
 }
 
 function takeHiddenHand(state, thief, target, index, reason, cardId) {
@@ -1102,6 +1166,7 @@ function chooseKit(state, playerId, cardId) {
 function chooseMiss(state, playerId, action) {
   const combat = state.combat;
   const p = player(state, playerId);
+  if (action.choice === "barrel" || action.choice === "jourdonnais") return useCheck(state, playerId, action.choice);
   if (action.choice === "take") {
     log(state, `${p.nickname} 님이 공격을 맞았습니다.`);
     const resume = combat.resume;
@@ -1263,22 +1328,46 @@ function applySid(state, p, cardIds, fromSave) {
   return null;
 }
 
+function useCheck(state, playerId, label) {
+  const combat = state.combat;
+  const defender = player(state, playerId);
+  if (!combat || combat.defenderId !== playerId) return "지금은 막을 수 없습니다.";
+  if (label === "barrel") {
+    if (!defender?.equipment.barrel || combat.usedBarrel) return "술통을 쓸 수 없습니다.";
+    combat.usedBarrel = true;
+  } else {
+    if (defender?.character !== "jourdonnais" || combat.usedJourdonnais) return "주르도네를 쓸 수 없습니다.";
+    combat.usedJourdonnais = true;
+  }
+  if (defender.character === "lucky") {
+    const cards = drawUpTo(state, 2);
+    if (cards.length <= 1) {
+      resolveCheck(state, cards[0] || null, label);
+      return null;
+    }
+    state.prompt = { kind: "lucky", playerId: defender.id, cards, mode: "combat", label };
+    log(state, `${defender.nickname} 님이 ${label === "jourdonnais" ? "주르도네" : "술통"} 드로우! 로 두 장을 뒤집었습니다.`);
+    showFlip(state, { cards, caption: `${defender.nickname} · 럭키 듀크 ${label === "jourdonnais" ? "주르도네" : "술통"} — 한 장을 고릅니다`, to: "hold" });
+    return null;
+  }
+  resolveCheck(state, drawOne(state), label);
+  return null;
+}
+
 function startDefense(state, defenderId, sourceId, need, resume) {
-  const defender = player(state, defenderId);
   state.combat = {
     kind: state.combat?.kind || "bang",
     sourceId,
     defenderId,
     missedNeed: need,
     missedGot: 0,
-    checks: [],
+    usedBarrel: false,
+    usedJourdonnais: false,
     resume,
     queue: state.combat?.queue || null,
   };
-  if (defender.character === "jourdonnais") state.combat.checks.push("jourdonnais");
-  if (defender.equipment.barrel) state.combat.checks.push("barrel");
   state.turnPhase = "react";
-  runChecks(state);
+  askMiss(state);
 }
 
 function runChecks(state) {
@@ -1289,28 +1378,7 @@ function runChecks(state) {
     defenseSuccess(state);
     return;
   }
-  if (!combat.checks.length) {
-    askMiss(state);
-    return;
-  }
-  const label = combat.checks.shift();
-  const defender = player(state, combat.defenderId);
-  if (defender.character === "lucky") {
-    const cards = drawUpTo(state, 2);
-    if (cards.length <= 1) {
-      resolveCheck(state, cards[0] || null, label);
-      return;
-    }
-    state.prompt = { kind: "lucky", playerId: defender.id, cards, mode: "combat", label };
-    log(state, `${defender.nickname} 님이 ${label === "jourdonnais" ? "주르도네" : "술통"} 드로우! 로 두 장을 뒤집었습니다.`);
-    showFlip(state, {
-      cards,
-      caption: `${defender.nickname} · 럭키 듀크 ${label === "jourdonnais" ? "주르도네" : "술통"} — 한 장을 고릅니다`,
-      to: "hold",
-    });
-    return;
-  }
-  resolveCheck(state, drawOne(state), label);
+  askMiss(state);
 }
 
 function resolveCheck(state, card, label) {
@@ -1331,12 +1399,17 @@ function resolveCheck(state, card, label) {
 
 function askMiss(state) {
   const combat = state.combat;
+  const defender = player(state, combat.defenderId);
+  const checks = [];
+  if (defender?.character === "jourdonnais" && !combat.usedJourdonnais) checks.push("jourdonnais");
+  if (defender?.equipment?.barrel && !combat.usedBarrel) checks.push("barrel");
   state.prompt = {
     kind: "miss",
     playerId: combat.defenderId,
     need: combat.missedNeed,
     got: combat.missedGot,
     sourceId: combat.sourceId,
+    checks,
   };
 }
 
@@ -1493,15 +1566,7 @@ function canSave(state, p) {
 function onLifeLost(state, target, d) {
   if (target.character === "elgringo" && d.elGringo && d.sourceId && d.sourceId !== target.id) {
     const src = player(state, d.sourceId);
-    if (src?.hand.length) {
-      const i = Math.floor(rand(state) * src.hand.length);
-      const card = src.hand.splice(i, 1)[0];
-      target.hand.push(card);
-      log(state, `${target.nickname} 님이 ${src.nickname} 님의 손패를 한 장 가져왔습니다.`);
-      cue(state, `${target.nickname} · 엘 그린고 — 손패를 가져옵니다`);
-      showFlip(state, { cards: [card], caption: `${target.nickname} · 엘 그린고 — 손패 한 장을 가져감`, to: "hand", ownerId: target.id });
-      suzy(state, src);
-    }
+    if (src?.hand.length) d.gringo = (d.gringo || 0) + 1;
   }
 }
 
@@ -1511,17 +1576,28 @@ function finishDamage(state) {
   const t = player(state, d.targetId);
   state.dmg = null;
   state.prompt = null;
-  if (t && t.hp > 0 && d.lost > 0) {
-    log(state, `${t.nickname} 님의 생명력 ${t.hp}/${t.maxHp}.`);
-    if (t.character === "bart") {
-      const got = drawUpTo(state, d.lost);
-      t.hand.push(...got);
-      if (got.length) {
-        log(state, `${t.nickname} 님이 잃은 생명만큼 카드를 ${got.length}장 뽑았습니다.`);
-        cue(state, `${t.nickname} · 바트 캐시디 — 잃은 생명만큼 뽑습니다`);
-        showFlip(state, { cards: got, caption: `${t.nickname} · 버트 캐시디 — 잃은 생명만큼 뽑음`, to: "hand", ownerId: t.id });
-      }
+  if (t && d.lost > 0 && t.character === "bart") {
+    const got = drawUpTo(state, d.lost);
+    t.hand.push(...got);
+    if (got.length) {
+      log(state, `${t.nickname} 님이 잃은 생명만큼 카드를 ${got.length}장 뽑았습니다.`);
+      cue(state, `${t.nickname} · 바트 캐시디 — 잃은 생명만큼 뽑습니다`);
+      showFlip(state, { cards: got, caption: `${t.nickname} · 버트 캐시디 — 잃은 생명만큼 뽑음`, to: "hand", ownerId: t.id });
     }
+  }
+  if (t && t.hp > 0 && d.lost > 0) log(state, `${t.nickname} 님의 생명력 ${t.hp}/${t.maxHp}.`);
+  const src = d.sourceId ? player(state, d.sourceId) : null;
+  if ((d.gringo || 0) > 0 && t && src?.hand.length) {
+    state.gringo = {
+      playerId: t.id,
+      sourceId: d.sourceId,
+      left: d.gringo,
+      dying: Boolean(t.hp <= 0 && t.alive),
+      resume: d.resume,
+      killerId: d.sourceId,
+    };
+    openGringo(state);
+    return;
   }
   if (t && t.hp <= 0 && t.alive) eliminate(state, t, d.sourceId);
   if (state.phase === "end") return;
@@ -1909,7 +1985,8 @@ function projectPrompt(state, viewerId) {
   if (prompt.kind === "pedro") return { ...base, top: prompt.top ? publicCard(prompt.top) : null };
   if (prompt.kind === "jesse") return { ...base, options: prompt.options };
   if (prompt.kind === "hand") return { ...base, count: prompt.count, targetId: prompt.targetId, reason: prompt.reason };
-  if (prompt.kind === "miss") return { ...base, need: prompt.need, got: prompt.got, sourceId: prompt.sourceId };
+  if (prompt.kind === "miss") return { ...base, need: prompt.need, got: prompt.got, sourceId: prompt.sourceId, checks: prompt.checks || [] };
+  if (prompt.kind === "reveal") return mine ? { ...base, cardId: prompt.cardId } : base;
   if (prompt.kind === "discard-bang") return { ...base, reason: prompt.reason, sourceId: prompt.sourceId };
   if (prompt.kind === "discard") return { ...base, count: prompt.count };
   if (prompt.kind === "save") return { ...base, amount: prompt.amount };
@@ -2015,6 +2092,7 @@ export function autoChoice(state, playerId) {
     return { type: "respond", choice: "take" };
   }
   if (prompt.kind === "jesse" || prompt.kind === "pedro") return { type: "respond", mode: "deck" };
+  if (prompt.kind === "reveal") return { type: "respond", choice: "reveal" };
   if (prompt.kind === "hand") return { type: "respond", index: 0 };
   if (prompt.kind === "kit" || prompt.kind === "lucky") return { type: "respond", cardId: prompt.cards[0].id };
   if (prompt.kind === "store") return { type: "respond", cardId: state.store.cards[0].id };

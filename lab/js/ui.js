@@ -1,9 +1,9 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=27";
-import { naturalKorean } from "./engine.js?v=27";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=27";
-import { solveProjectedLayout } from "./layout.js?v=27";
-import { mountTable } from "./table3d.js?v=27";
-import { stampURL } from "./stamp.js?v=27";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=28";
+import { naturalKorean } from "./engine.js?v=28";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=28";
+import { solveProjectedLayout } from "./layout.js?v=28";
+import { mountTable } from "./table3d.js?v=28";
+import { stampURL } from "./stamp.js?v=28";
 
 const ui = {
   selected: null,
@@ -350,13 +350,15 @@ function seatCards(p, view) {
 }
 
 function seatHtml(p, view) {
-  const selected = ui.picker?.targetId === p.id || isTarget(view, p.id);
+  const legal = isTarget(view, p.id);
+  const selected = legal;
   const offline = p.connected === false;
   const me = view.players.find((player) => player.id === view.yourId);
   const weapon = me?.equipment?.weapon;
   const range = weapon ? (CARD_INFO[weapon.type]?.range || 1) : 1;
   const reachable = Boolean(me?.alive && p.alive && p.distance != null && p.distance <= range);
-  const distanceClass = view.phase !== "play" || !me?.alive ? "" : (selected || reachable ? "is-reachable" : "is-distant");
+  const aiming = Boolean(ui.selected);
+  const distanceClass = view.phase !== "play" || !me?.alive ? "" : (aiming ? (legal ? "is-reachable" : "is-distant") : (reachable ? "is-reachable" : "is-distant"));
   const activeTurn = p.id === view.currentId ? "is-turn" : "";
   return `<div class="seat ${selected ? "is-target" : ""} ${offline ? "is-offline" : ""} ${distanceClass} ${activeTurn}" data-player="${esc(p.id)}" data-presence="${offline ? "off" : "on"}" data-distance="${p.distance ?? ""}">
     ${stackHtml(`seat-${p.id}`, seatCards(p, view))}
@@ -495,6 +497,11 @@ function actionBar(view, me) {
   const prompt = view.prompt;
   const bits = [];
   if (prompt?.mine && (prompt.kind === "miss" || prompt.kind === "discard-bang")) {
+    if (prompt.kind === "miss") {
+      for (const check of prompt.checks || []) {
+        bits.push(`<button type="button" class="bar-btn" data-action="check" data-check="${check}">${check === "barrel" ? "술통" : "주르도네"}</button>`);
+      }
+    }
     bits.push(`<button type="button" class="bar-btn danger" data-action="pass">${prompt.kind === "miss" ? "맞기" : "포기"}</button>`);
   }
   if (prompt?.mine && prompt.kind === "save") {
@@ -553,7 +560,7 @@ function abilityPanel(view) {
   if (prompt.kind === "hand") {
     const backs = Array.from({ length: prompt.count }, (_, index) =>
       `<button type="button" class="card card-back choice-back" data-hand-back="${index}" aria-label="뒷면 카드"><span class="back-mark">BANG!</span></button>`).join("");
-    const title = prompt.reason === "jesse" ? "가져갈 손패를 고르세요" : "손패에서 한 장을 고르세요";
+    const title = prompt.reason === "jesse" ? "가져갈 손패를 고르세요" : prompt.reason === "elgringo" ? "엘 그린고 · 가져갈 손패를 고르세요" : "손패에서 한 장을 고르세요";
     return `<div class="ability-panel" data-ability="hand"><p>${title}</p><div class="store-row">${backs}</div></div>`;
   }
   if (prompt.kind === "kit") {
@@ -577,6 +584,10 @@ function abilityPanel(view) {
   }
   if (prompt.kind === "lucky") {
     return `<div class="ability-panel" data-ability="lucky"><p>럭키 듀크 · 드로우!로 쓸 카드를 고르세요</p><div class="store-row">${(prompt.cards || []).map((card) => cardArt(card, `data-pick-card="1"`)).join("")}</div></div>`;
+  }
+  if (prompt.kind === "reveal") {
+    const card = (me?.hand || []).find((item) => item.id === prompt.cardId);
+    return `<div class="ability-panel" data-ability="reveal"><p>블랙 잭 · 두 번째 카드를 공개하세요</p><div class="store-row">${card ? cardArt(card, `data-reveal="1"`) : ""}</div></div>`;
   }
   return "";
 }
@@ -771,6 +782,11 @@ function onClick(event, app) {
   if (event.target.closest("[data-draw]")) {
     const button = event.target.closest("[data-draw]");
     ctx.onAction({ type: "respond", mode: button.dataset.draw, targetId: button.dataset.target });
+    return;
+  }
+  const checkBtn = event.target.closest("[data-action=check]");
+  if (checkBtn) {
+    ctx.onAction({ type: "respond", choice: checkBtn.dataset.check });
     return;
   }
   if (event.target.closest("[data-action=pass]")) {
@@ -983,7 +999,7 @@ function runSpreadAction(ctx, act, zoomCardId) {
   if (act === "discard-toggle" && cardId) {
     if (ui.discard.has(cardId)) ui.discard.delete(cardId);
     else if (ui.discard.size < (view?.prompt?.count || 0)) ui.discard.add(cardId);
-    renderSpread(ctx);
+    mount(document.querySelector("#app"), ctx);
     return;
   }
   if (act === "discard-go") {
@@ -995,7 +1011,7 @@ function runSpreadAction(ctx, act, zoomCardId) {
   if (act === "sid-toggle" && cardId) {
     if (ui.sid.has(cardId)) ui.sid.delete(cardId);
     else if (ui.sid.size < 2) ui.sid.add(cardId);
-    renderSpread(ctx);
+    mount(document.querySelector("#app"), ctx);
     return;
   }
   if (act === "sid-go") {
@@ -1266,6 +1282,10 @@ function zoomPanelCard(card, confirm) {
 }
 
 function confirmPanelCard(ctx, view, card) {
+  if (card.hasAttribute("data-reveal")) {
+    ctx.onAction({ type: "respond", choice: "reveal" });
+    return;
+  }
   if (card.dataset.handBack != null && view?.prompt?.kind === "hand") {
     ctx.onAction({ type: "respond", index: Number(card.dataset.handBack) });
     return;

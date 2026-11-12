@@ -220,6 +220,11 @@ test("barrel hearts cancel a Bang and Slab still needs a second Missed", () => {
   const res = dispatch(state, cur.id, { type: "play", cardId: "b", targetId: target.id });
   assert.equal(res.ok, true, res.error);
   assert.equal(state.prompt?.kind, "miss");
+  assert.equal(state.prompt.got, 0);
+  assert.equal(state.prompt.need, 2);
+  assert.ok(state.prompt.checks.includes("barrel"));
+  assert.equal(dispatch(state, target.id, { type: "respond", choice: "barrel" }).ok, true);
+  assert.equal(state.prompt?.kind, "miss");
   assert.equal(state.prompt.got, 1);
   assert.equal(state.prompt.need, 2);
   assert.equal(target.hp, before);
