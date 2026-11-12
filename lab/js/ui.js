@@ -1,4 +1,4 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=7";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=8";
 
 const ui = {
   selected: null,
@@ -93,7 +93,7 @@ function waitHtml(ctx) {
   return `<main class="entry">
     <section class="poster">
       <div class="brand"><h1 class="bang">BANG!</h1><p class="ko">뱅!</p></div>
-      <p class="tagline">${esc(ctx.status?.text || "살롱을 찾는 중…")}</p>
+      <p class="tagline">${esc(ctx.status?.text || "방을 찾는 중…")}</p>
       ${lost ? `<button class="enter-btn" type="button" data-action="takeover">내가 방장 되기</button>` : `<p class="footnote">먼저 들어온 사람이 방장이 됩니다.</p>`}
       ${toastHtml(ctx)}
     </section>
@@ -113,14 +113,16 @@ function lobbyHtml(ctx) {
       <button type="button" data-action="help">도움말</button>
     </header>
     <section class="lobby">
-      <h1>살롱</h1>
-      <p class="muted">${count}/7명 · 4명이 모이면 시작할 수 있습니다.</p>
+      <h1>대기실</h1>
+      <p class="muted" data-count="${count}">${count}/7명 · 4명이 모이면 시작할 수 있습니다.</p>
       <ol class="roster">
-        ${view.players.map((p) => `<li data-player="${esc(p.id)}">
+        ${view.players.map((p) => `<li data-player="${esc(p.id)}" data-presence="${p.connected ? "on" : "off"}">
           <span>${esc(p.nickname)}</span>
-          ${p.isHost ? `<em>방장</em>` : ""}
-          ${p.id === view.yourId ? `<em>나</em>` : ""}
-          ${p.connected ? "" : `<em class="off">끊김</em>`}
+          <span class="marks">
+            ${p.isHost ? `<em>방장</em>` : ""}
+            ${p.id === view.yourId ? `<em>나</em>` : ""}
+            ${presenceHtml(p)}
+          </span>
         </li>`).join("")}
       </ol>
       ${host
@@ -159,9 +161,12 @@ function selectHtml(ctx) {
           </button>`).join("")}
         </div>`}
       <ul class="roster compact">
-        ${view.players.map((p) => `<li>
+        ${view.players.map((p) => `<li data-player="${esc(p.id)}" data-presence="${p.connected ? "on" : "off"}">
           <span>${esc(p.nickname)}${p.role === "sheriff" ? " · 보안관" : ""}</span>
-          <em>${p.character ? esc(characterById(p.character).name) : "고르는 중"}</em>
+          <span class="marks">
+            <em>${p.character ? esc(characterById(p.character).name) : "고르는 중"}</em>
+            ${presenceHtml(p)}
+          </span>
         </li>`).join("")}
       </ul>
     </section>
@@ -252,12 +257,13 @@ function seatCards(p, view) {
 
 function seatHtml(p, view) {
   const selected = ui.picker?.targetId === p.id || isTarget(view, p.id);
-  return `<article class="seat ${selected ? "is-target" : ""}" data-player="${esc(p.id)}" ${selected ? `data-legal-target="1"` : ""}>
+  const offline = p.connected === false;
+  return `<article class="seat ${selected ? "is-target" : ""} ${offline ? "is-offline" : ""}" data-player="${esc(p.id)}" data-presence="${offline ? "off" : "on"}" ${selected ? `data-legal-target="1"` : ""}>
     ${stackHtml(`seat-${p.id}`, seatCards(p, view))}
     <p class="who">
       <strong>${esc(p.nickname)}</strong>
       ${p.distance ? `<span>거리 ${p.distance}</span>` : ""}
-      ${p.connected ? "" : `<span class="off">끊김</span>`}
+      ${presenceHtml(p)}
       <span class="bullets" aria-label="생명 ${p.hp}">${bullets(p.hp, p.maxHp)}</span>
       <span class="hand-count" title="손패" aria-label="손패 ${p.handCount}장">${p.handCount}</span>
     </p>
@@ -291,6 +297,11 @@ function equipPieces(p) {
     .map((card) => cardArt(card, `data-equip="${esc(card.id)}"`));
 }
 
+function presenceHtml(p) {
+  const on = p.connected !== false;
+  return `<span class="presence ${on ? "is-on" : "is-off"}" data-presence="${on ? "on" : "off"}">${on ? "접속" : "오프라인"}</span>`;
+}
+
 function bullets(hp, max) {
   if (!max) return "";
   let html = "";
@@ -304,6 +315,7 @@ function selfTray(p, view) {
     ${stackHtml("self", seatCards(p, view))}
     <p class="who">
       <strong>${esc(p.nickname)}</strong>
+      ${presenceHtml(p)}
       <span class="bullets" aria-label="생명 ${p.hp}">${bullets(p.hp, p.maxHp)}</span>
     </p>
   </div>`;

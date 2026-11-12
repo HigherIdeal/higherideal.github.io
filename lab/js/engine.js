@@ -9,8 +9,8 @@ import {
   cardLabel,
   characterById,
   rolesForCount,
-} from "./cards.js?v=7";
-import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=7";
+} from "./cards.js?v=8";
+import { MAX_PLAYERS, MIN_PLAYERS } from "./config.js?v=8";
 
 const WEAPONS = new Set(WEAPON_TYPES);
 
@@ -39,11 +39,23 @@ export function createLobby(host, seed) {
   return state;
 }
 
+export const DISCONNECT_GRACE_MS = 60000;
+
+function uniqueNickname(state, nickname, exceptId) {
+  const base = cleanName(nickname);
+  const used = new Set(state.players.filter((p) => p.id !== exceptId).map((p) => p.nickname));
+  if (!used.has(base)) return base;
+  let n = 2;
+  while (used.has(`${base}(${n})`)) n += 1;
+  return `${base}(${n})`;
+}
+
 export function addPlayer(state, id, nickname) {
   const existing = state.players.find((p) => p.id === id);
   if (existing) {
     existing.connected = true;
-    if (state.phase === "lobby") existing.nickname = cleanName(nickname);
+    delete existing.disconnectedAt;
+    if (state.phase === "lobby") existing.nickname = uniqueNickname(state, nickname, id);
     return { ok: true, state };
   }
   if (state.phase !== "lobby") {
@@ -52,13 +64,7 @@ export function addPlayer(state, id, nickname) {
   if (state.players.length >= MAX_PLAYERS) {
     return { ok: false, error: "방이 가득 찼습니다. (최대 7명)" };
   }
-  let name = cleanName(nickname);
-  const used = new Set(state.players.map((p) => p.nickname));
-  if (used.has(name)) {
-    let n = 2;
-    while (used.has(`${name}${n}`)) n += 1;
-    name = `${name}${n}`;
-  }
+  const name = uniqueNickname(state, nickname, id);
   state.players.push({
     id,
     nickname: name,
@@ -76,16 +82,24 @@ export function addPlayer(state, id, nickname) {
   return { ok: true, state };
 }
 
-export function markDisconnect(state, id) {
+export function markDisconnect(state, id, now = Date.now()) {
   const p = player(state, id);
-  if (!p) return state;
-  if (state.phase === "lobby" && id !== state.hostId) {
-    state.players = state.players.filter((x) => x.id !== id);
-    state.players.forEach((pl, i) => { pl.seat = i; });
-  } else {
-    p.connected = false;
-  }
+  if (!p || p.id === state.hostId) return state;
+  p.connected = false;
+  p.disconnectedAt = now;
   return state;
+}
+
+export function expireDisconnects(state, now = Date.now(), grace = DISCONNECT_GRACE_MS) {
+  if (!state || state.phase !== "lobby") return false;
+  const before = state.players.length;
+  state.players = state.players.filter((p) => {
+    if (p.id === state.hostId || p.connected !== false) return true;
+    return now - (p.disconnectedAt || now) < grace;
+  });
+  if (state.players.length === before) return false;
+  state.players.forEach((p, i) => { p.seat = i; });
+  return true;
 }
 
 export function dispatch(state, playerId, action) {
@@ -1400,6 +1414,13 @@ export function projectView(state, viewerId) {
     store: state.store ? { cards: state.store.cards.map(publicCard), pickerId: state.store.pickerId } : null,
     bangsPlayed: state.bangsPlayed,
     players: state.players.map((p) => projectPlayer(state, p, viewerId, reveal)),
+    roster: state.players.map((p) => ({
+      id: p.id,
+      nickname: p.nickname,
+      seat: p.seat,
+      connected: p.connected !== false,
+      isHost: p.id === state.hostId,
+    })),
     handInfo: you && state.phase === "play" && state.currentId === viewerId && state.turnPhase === "play" && !state.prompt
       ? handInfo(state, you)
       : [],

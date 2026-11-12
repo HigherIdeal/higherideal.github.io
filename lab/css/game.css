@@ -160,7 +160,18 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   padding: 8px 2px;
 }
 .roster em, .who span { font-style: normal; color: var(--muted); font-size: 12px; }
-.roster .off, .who .off { color: var(--stamp); }
+.roster .marks { display: inline-flex; align-items: center; gap: 6px; }
+.presence {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: var(--muted); font-size: 11px; letter-spacing: 0;
+}
+.presence::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; opacity: 0.45;
+}
+.presence.is-on::before { opacity: 0.9; }
+.presence.is-off { opacity: 0.8; }
+.seat.is-offline { opacity: 0.55; }
 .choice-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .choice {
   text-align: left; color: var(--ink); background: var(--panel); border-radius: 2px; padding: 10px;

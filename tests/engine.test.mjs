@@ -6,6 +6,8 @@ import {
   autoChoice,
   createLobby,
   dispatch,
+  expireDisconnects,
+  markDisconnect,
   projectView,
 } from "../lab/js/engine.js";
 
@@ -384,4 +386,60 @@ test("full games reach a win without throwing", () => {
     if (state.phase === "end") finished += 1;
   }
   assert.ok(finished >= 8, `finished ${finished}`);
+});
+
+test("same id keeps the seat, a new name is suffixed, and a full room still lets them back", () => {
+  const state = createLobby({ id: "h", nickname: "방장" }, 3);
+  for (let i = 1; i <= 6; i += 1) addPlayer(state, `p${i}`, "철수");
+  assert.equal(state.players.length, 7);
+  assert.equal(state.players.find((p) => p.id === "p1").nickname, "철수");
+  assert.equal(state.players.find((p) => p.id === "p2").nickname, "철수(2)");
+  assert.equal(state.players.find((p) => p.id === "p6").nickname, "철수(6)");
+  const rejected = addPlayer(state, "extra", "새손님");
+  assert.equal(rejected.ok, false);
+  assert.equal(state.players.length, 7);
+  const back = addPlayer(state, "p3", "철수");
+  assert.equal(back.ok, true);
+  assert.equal(state.players.length, 7);
+  assert.equal(state.players.find((p) => p.id === "p3").connected, true);
+
+  const game = table(4);
+  const who = game.players[1];
+  const hand = who.hand.map((c) => c.id);
+  const hp = who.hp;
+  const role = who.role;
+  const character = who.character;
+  who.equipment.barrel = { id: "blue-barrel", type: "barrel", suit: "spades", rank: "K" };
+  who.equipment.mustang = { id: "blue-mustang", type: "mustang", suit: "hearts", rank: "9" };
+  markDisconnect(game, who.id, 5000);
+  assert.equal(who.connected, false);
+  assert.equal(expireDisconnects(game, 9_999_999), false);
+  assert.equal(game.players.length, 4);
+  addPlayer(game, who.id, "다른이름");
+  assert.deepEqual(who.hand.map((c) => c.id), hand);
+  assert.equal(who.role, role);
+  assert.equal(who.character, character);
+  assert.ok(hp > 0);
+  assert.equal(who.hp, hp);
+  assert.equal(who.equipment.barrel.id, "blue-barrel");
+  assert.equal(who.equipment.mustang.id, "blue-mustang");
+  assert.equal(who.connected, true);
+  assert.notEqual(who.nickname, "다른이름");
+  const view = projectView(game, who.id);
+  assert.equal(view.roster.find((p) => p.id === who.id).connected, true);
+});
+
+test("a dropped player keeps the seat through the grace period", () => {
+  const lobby = createLobby({ id: "h", nickname: "방장" }, 1);
+  addPlayer(lobby, "p1", "나래");
+  markDisconnect(lobby, "p1", 10_000);
+  assert.equal(lobby.players.length, 2);
+  assert.equal(lobby.players[1].connected, false);
+  assert.equal(expireDisconnects(lobby, 10_000 + 59_000), false);
+  assert.equal(lobby.players.some((p) => p.id === "p1"), true);
+  assert.equal(expireDisconnects(lobby, 10_000 + 60_000), true);
+  assert.equal(lobby.players.some((p) => p.id === "p1"), false);
+  markDisconnect(lobby, "h", 10_000);
+  assert.equal(lobby.players[0].id, "h");
+  assert.equal(lobby.players[0].connected, true);
 });

@@ -1,6 +1,6 @@
-import { ENTRY_CODE } from "./config.js?v=7";
-import { connect } from "./net.js?v=7";
-import { mount } from "./ui.js?v=7";
+import { ENTRY_CODE } from "./config.js?v=8";
+import { connect } from "./net.js?v=8";
+import { mount } from "./ui.js?v=8";
 
 const app = document.querySelector("#app");
 let link = null;
@@ -52,12 +52,13 @@ function enter(nickname, code) {
   savedName = nickname;
   entryError = "";
   localStorage.setItem("bang-nickname", nickname);
+  // This tab's id. sessionStorage survives a refresh of this tab and is not shared with other tabs.
   let playerId = sessionStorage.getItem("bang-player-id");
   if (!playerId) {
     playerId = crypto.randomUUID();
     sessionStorage.setItem("bang-player-id", playerId);
   }
-  status = { mode: "search", text: "살롱을 찾는 중…" };
+  status = { mode: "search", text: "방을 찾는 중…" };
   link = connect({
     playerId,
     nickname,

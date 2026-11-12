@@ -1,10 +1,12 @@
-import { ROOM_ID } from "./config.js?v=7";
-import { addPlayer, autoChoice, createLobby, dispatch, markDisconnect, projectView } from "./engine.js?v=7";
+import { ROOM_ID } from "./config.js?v=8";
+import { addPlayer, autoChoice, createLobby, dispatch, expireDisconnects, markDisconnect, projectView } from "./engine.js?v=8";
 
-const SNAP = "bang-snapshot";
+const SNAP = `bang-state-${ROOM_ID}`;
 const LOCK = "bang-host-lock";
 const JOIN_TIMEOUT_MS = 12000;
 const RETRY_MS = 700;
+const PING_MS = 3000;
+const STALE_MS = 12000;
 
 function peerOptions() {
   return {
@@ -37,6 +39,11 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   let retryTimer = 0;
   let roomMisses = 0;
   let guestSince = 0;
+  let steppedAside = false;
+  let lastPing = 0;
+  const connToken = newId();
+  const helloAt = Date.now();
+  const sessions = new Map();
 
   const report = (kind, text) => onStatus?.({ mode: kind, text, isHost });
   const toast = (text) => { if (text) onToast?.(text); };
@@ -50,7 +57,17 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   }
 
   function persist() {
-    try { localStorage.setItem(SNAP, JSON.stringify(state)); } catch { /* quota */ }
+    if (!state) return;
+    try { localStorage.setItem(SNAP, JSON.stringify({ roomId: ROOM_ID, state })); } catch { /* quota */ }
+  }
+
+  function readSnap() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SNAP) || "null");
+      const saved = raw?.roomId === ROOM_ID ? raw.state : raw;
+      if (saved?.hostId === playerId && Array.isArray(saved.players)) return saved;
+    } catch { /* ignore bad snapshot */ }
+    return null;
   }
 
   function broadcast() {
@@ -89,7 +106,6 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     }
     if (action.type === "disconnect") {
       markDisconnect(state, fromId);
-      conns.delete(fromId);
       broadcast();
       return;
     }
@@ -99,11 +115,63 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   }
 
   function sendHello(conn) {
-    const msg = { kind: "hello", from: playerId, nickname };
+    const msg = { kind: "hello", from: playerId, nickname, token: connToken, at: helloAt };
     if (conn?.open) {
       try { conn.send(msg); } catch { /* closed */ }
     }
     channel.postMessage(msg);
+  }
+
+  function dismiss(conn, token) {
+    if (!token) return;
+    const msg = { kind: "replaced", token };
+    if (conn?.open) {
+      try { conn.send(msg); } catch { /* closed */ }
+    }
+    channel.postMessage(msg);
+  }
+
+  function acceptHello(from, nickname, token, at, conn) {
+    if (!isHost || !state || !from) return;
+    if (from === playerId) {
+      dismiss(conn, token);
+      return;
+    }
+    const prev = sessions.get(from);
+    const arrived = at || Date.now();
+    if (prev?.token && token && prev.token !== token) {
+      if (prev.at && arrived < prev.at) return;
+      const old = prev.conn;
+      sessions.set(from, { token, conn: conn || null, seen: Date.now(), at: arrived });
+      if (conn) {
+        conn.__pid = from;
+        conns.set(from, conn);
+      }
+      dismiss(old, prev.token);
+      if (old && old !== conn) {
+        try { old.close(); } catch { /* already closed */ }
+      }
+    } else {
+      const next = conn || prev?.conn || null;
+      if (next) {
+        next.__pid = from;
+        conns.set(from, next);
+      }
+      sessions.set(from, { token: token || prev?.token || "", conn: next, seen: Date.now(), at: arrived || prev?.at || Date.now() });
+    }
+    apply(from, { type: "join", nickname });
+  }
+
+  function stepAside() {
+    if (steppedAside) return;
+    steppedAside = true;
+    clearTimeout(retryTimer);
+    report("replaced", "다른 탭에서 이어서 입장했습니다. 이 창은 닫힙니다.");
+    onView(null);
+    try { guestConn?.close(); } catch { /* ignore */ }
+    try { peer?.destroy(); } catch { /* ignore */ }
+    peer = null;
+    guestConn = null;
   }
 
   function ingest(msg) {
@@ -122,12 +190,33 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       if (!guestConn?.open) sendHello(null);
       return;
     }
-    if (msg.kind === "hello" && isHost) {
-      apply(msg.from, { type: "join", nickname: msg.nickname });
+    if (msg.kind === "replaced" && msg.token === connToken) {
+      stepAside();
       return;
     }
-    if (msg.kind === "action" && isHost) apply(msg.from, msg.action || {});
-    if (msg.kind === "state" && msg.to === playerId && !isHost) {
+    if (msg.kind === "hello" && isHost) {
+      acceptHello(msg.from, msg.nickname, msg.token, msg.at, msg._conn || null);
+      return;
+    }
+    if (msg.kind === "ping" && isHost) {
+      const sess = sessions.get(msg.from);
+      if (!sess || (msg.token && sess.token && sess.token !== msg.token)) return;
+      sess.seen = Date.now();
+      const who = state?.players.find((p) => p.id === msg.from);
+      if (who && who.connected === false) {
+        who.connected = true;
+        delete who.disconnectedAt;
+        broadcast();
+      }
+      return;
+    }
+    if (msg.kind === "action" && isHost) {
+      const sess = sessions.get(msg.from);
+      if (sess?.token && msg.token && sess.token !== msg.token) return;
+      if (sess) sess.seen = Date.now();
+      apply(msg.from, msg.action || {});
+    }
+    if (msg.kind === "state" && msg.to === playerId && !isHost && !steppedAside) {
       const seq = msg.view?.seq || 0;
       if (seq < seqSeen) return;
       seqSeen = seq;
@@ -137,7 +226,7 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       sessionStorage.setItem("bang-role", "guest");
       if (mode !== "guest" || reclaiming) {
         mode = "guest";
-        report("guest", "살롱에 연결되었습니다.");
+        report("guest", "방에 연결되었습니다.");
       }
       onView(msg.view);
     }
@@ -181,7 +270,7 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   function armRetry(fn, ms) {
     clearTimeout(retryTimer);
     retryTimer = setTimeout(() => {
-      if (!destroyed && !isHost) fn();
+      if (!destroyed && !isHost && !steppedAside) fn();
     }, ms);
   }
 
@@ -189,7 +278,7 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     guestConn = conn;
     conn.on("data", (msg) => ingest(msg));
     conn.on("close", () => {
-      if (guestConn !== conn || destroyed || isHost) return;
+      if (guestConn !== conn || destroyed || isHost || steppedAside) return;
       guestConn = null;
       foundHost = true;
       mode = "joining";
@@ -210,7 +299,7 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     bindGuest(conn);
     sendHello(conn);
     guestSince = Date.now();
-    report("guest", reclaiming ? "방장 자리를 되찾는 중…" : "살롱에 연결되었습니다.");
+    report("guest", reclaiming ? "방장 자리를 되찾는 중…" : "방에 연결되었습니다.");
   }
 
   function activateHost(restore) {
@@ -220,17 +309,19 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     roomMisses = 0;
     sessionStorage.setItem("bang-role", "host");
     let restored = null;
-    if (restore) {
-      try {
-        const snap = JSON.parse(localStorage.getItem(SNAP) || "null");
-        if (snap?.hostId === playerId && Array.isArray(snap.players)) restored = snap;
-      } catch { /* ignore bad snapshot */ }
-    }
+    if (restore) restored = readSnap();
     if (restored) sessionStorage.setItem("bang-restoring", "1");
     else sessionStorage.removeItem("bang-restoring");
     if (restored) {
       state = restored;
-      for (const p of state.players) p.connected = p.id === playerId;
+      const now = Date.now();
+      for (const p of state.players) {
+        const here = p.id === playerId;
+        p.connected = here;
+        if (here) delete p.disconnectedAt;
+        else p.disconnectedAt = now;
+      }
+      sessions.clear();
       const me = state.players.find((p) => p.id === playerId);
       if (me) me.nickname = nickname;
       else addPlayer(state, playerId, nickname);
@@ -259,7 +350,7 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       armRetry(join, RETRY_MS);
       return;
     }
-    report("search", "살롱을 여는 중…");
+    report("search", "방을 여는 중…");
     claim(false);
   }
 
@@ -270,17 +361,17 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       armRetry(() => claim(true), RETRY_MS);
       return;
     }
-    report("error", "살롱에 연결하지 못했습니다. 다시 시도합니다.");
+    report("error", "방에 연결하지 못했습니다. 다시 시도합니다.");
     armRetry(join, RETRY_MS);
   }
 
   function join() {
-    if (destroyed || isHost) return;
+    if (destroyed || isHost || steppedAside) return;
     clearTimeout(retryTimer);
     const token = ++attempt;
     mode = "joining";
     const role = sessionStorage.getItem("bang-role");
-    report("search", role === "host" ? "방장 자리를 되찾는 중…" : "살롱을 찾는 중…");
+    report("search", role === "host" ? "방장 자리를 되찾는 중…" : "방을 찾는 중…");
     channel.postMessage({ kind: "discover", from: playerId });
     destroyPeer();
     if (!window.Peer) {
@@ -336,16 +427,16 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   }
 
   function claim(restore) {
-    if (destroyed || isHost) return;
+    if (destroyed || isHost || steppedAside) return;
     clearTimeout(retryTimer);
     const token = ++attempt;
     mode = "claiming";
     if (otherHoldsLock() || !claimLock()) {
-      report("search", "이미 열린 살롱에 들어가는 중…");
+      report("search", "이미 열린 방에 들어가는 중…");
       armRetry(join, 300);
       return;
     }
-    report("search", restore ? "방장 자리를 되찾는 중…" : "살롱을 여는 중…");
+    report("search", restore ? "방장 자리를 되찾는 중…" : "방을 여는 중…");
     destroyPeer();
     if (!window.Peer) {
       releaseLock();
@@ -372,16 +463,14 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
     local.on("connection", (conn) => {
       conn.on("data", (msg) => {
         if (!msg || token !== attempt) return;
-        if (msg.kind === "hello") {
-          conn.__pid = msg.from;
-          conns.set(msg.from, conn);
-          apply(msg.from, { type: "join", nickname: msg.nickname });
-        } else if (msg.kind === "action" && conn.__pid) {
-          apply(conn.__pid, msg.action || {});
-        }
+        ingest({ ...msg, _conn: conn });
       });
       conn.on("close", () => {
-        if (conn.__pid) apply(conn.__pid, { type: "disconnect" });
+        const pid = conn.__pid;
+        if (!pid || sessions.get(pid)?.conn !== conn) return;
+        sessions.delete(pid);
+        conns.delete(pid);
+        apply(pid, { type: "disconnect" });
       });
     });
 
@@ -397,14 +486,14 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
         if (isHost || settled) return;
         settled = true;
         releaseLock();
-        report("search", restore ? "방장 자리를 되찾는 중…" : "이미 열린 살롱에 들어가는 중…");
+        report("search", restore ? "방장 자리를 되찾는 중…" : "이미 열린 방에 들어가는 중…");
         armRetry(join, 350);
         return;
       }
       if (settled || isHost) return;
       settled = true;
       releaseLock();
-      report("error", "살롱을 열지 못했습니다. 다시 시도합니다.");
+      report("error", "방을 열지 못했습니다. 다시 시도합니다.");
       armRetry(() => (restore ? claim(true) : join()), RETRY_MS);
     });
   }
@@ -415,7 +504,7 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
       apply(playerId, full);
       return;
     }
-    const msg = { kind: "action", from: playerId, action: full };
+    const msg = { kind: "action", from: playerId, token: connToken, action: full };
     channel.postMessage(msg);
     if (guestConn?.open) {
       try { guestConn.send(msg); } catch { /* closed */ }
@@ -423,7 +512,7 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
   }
 
   const heartbeat = setInterval(() => {
-    if (destroyed) return;
+    if (destroyed || steppedAside) return;
     if (!isHost) {
       if (guestConn?.open && seqSeen === 0) {
         sendHello(guestConn);
@@ -433,11 +522,30 @@ export function connect({ playerId, nickname, onView, onStatus, onToast }) {
           claim(true);
         }
       }
+      if (Date.now() - lastPing >= PING_MS && (guestConn?.open || foundHost)) {
+        lastPing = Date.now();
+        const ping = { kind: "ping", from: playerId, token: connToken };
+        if (guestConn?.open) {
+          try { guestConn.send(ping); } catch { /* closed */ }
+        }
+        channel.postMessage(ping);
+      }
       return;
     }
     localStorage.setItem(LOCK, JSON.stringify({ id: playerId, ts: Date.now() }));
     channel.postMessage({ kind: "host-here", hostId: playerId });
     if (!state) return;
+    const now = Date.now();
+    let presenceChanged = expireDisconnects(state, now);
+    for (const p of state.players) {
+      if (p.id === playerId) continue;
+      const sess = sessions.get(p.id);
+      if (p.connected !== false && sess && now - sess.seen > STALE_MS) {
+        markDisconnect(state, p.id, now);
+        presenceChanged = true;
+      }
+    }
+    if (presenceChanged) broadcast();
     const actor = state.prompt?.playerId || (state.phase === "play" && state.turnPhase === "play" ? state.currentId : null);
     if (!actor) return;
     const who = state.players.find((p) => p.id === actor);
