@@ -1,7 +1,7 @@
-import * as THREE from "../vendor/three.module.js?v=26";
-import { CARD_INFO, ROLES, characterById } from "./cards.js?v=26";
-import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=26";
-import { stampCanvas } from "./stamp.js?v=26";
+import * as THREE from "../vendor/three.module.js?v=27";
+import { CARD_INFO, ROLES, characterById } from "./cards.js?v=27";
+import { cameraRig, cardYaw, solveProjectedLayout } from "./layout.js?v=27";
+import { stampCanvas } from "./stamp.js?v=27";
 
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 

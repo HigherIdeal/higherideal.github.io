@@ -1,9 +1,9 @@
-import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=26";
-import { naturalKorean } from "./engine.js?v=26";
-import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=26";
-import { solveProjectedLayout } from "./layout.js?v=26";
-import { mountTable } from "./table3d.js?v=26";
-import { stampURL } from "./stamp.js?v=26";
+import { CARD_INFO, CHARACTERS, ROLES, SUITS, characterById } from "./cards.js?v=27";
+import { naturalKorean } from "./engine.js?v=27";
+import { applyEffects, captureBefore, isSoundOn, toggleSound } from "./motion.js?v=27";
+import { solveProjectedLayout } from "./layout.js?v=27";
+import { mountTable } from "./table3d.js?v=27";
+import { stampURL } from "./stamp.js?v=27";
 
 const ui = {
   selected: null,
@@ -741,17 +741,9 @@ function onClick(event, app) {
     ctx.onAction({ type: "draw" });
     return;
   }
-  const handBack = event.target.closest("[data-hand-back]");
-  if (handBack && view?.prompt?.kind === "hand" && view.prompt.mine) {
-    ctx.onAction({ type: "respond", index: Number(handBack.dataset.handBack) });
-    return;
-  }
-  const kitCard = event.target.closest("[data-kit-card]");
-  if (kitCard && view?.prompt?.kind === "kit") {
-    const id = kitCard.dataset.kitCard;
-    if (ui.kitKeep.has(id)) ui.kitKeep.delete(id);
-    else if (ui.kitKeep.size < 2) ui.kitKeep.add(id);
-    mount(app, ctx);
+  const panelCard = event.target.closest(".ability-panel .card, .steal-picker .card, .store .card");
+  if (panelCard) {
+    zoomPanelCard(panelCard, () => confirmPanelCard(ctx, view, panelCard));
     return;
   }
   if (event.target.closest("[data-action=kit-keep]") && view?.prompt?.kind === "kit" && ui.kitKeep.size === 2) {
@@ -775,24 +767,7 @@ function onClick(event, app) {
     mount(app, ctx);
     return;
   }
-  if (event.target.closest("[data-take]")) {
-    const button = event.target.closest("[data-take]");
-    const take = button.dataset.take;
-    const index = button.dataset.handIndex;
-    const pick = ui.picker;
-    ui.picker = null;
-    ui.selected = null;
-    if (pick) ctx.onAction({ type: "play", cardId: pick.cardId, targetId: pick.targetId, take, index: index == null ? undefined : Number(index) });
-    return;
-  }
-  if (event.target.closest("[data-store-card]")) {
-    ctx.onAction({ type: "respond", cardId: event.target.closest(".card").dataset.cardId });
-    return;
-  }
-  if (event.target.closest("[data-pick-card]")) {
-    ctx.onAction({ type: "respond", cardId: event.target.closest(".card").dataset.cardId });
-    return;
-  }
+  if (event.target.closest("[data-take], [data-store-card], [data-pick-card]")) return;
   if (event.target.closest("[data-draw]")) {
     const button = event.target.closest("[data-draw]");
     ctx.onAction({ type: "respond", mode: button.dataset.draw, targetId: button.dataset.target });
@@ -1280,8 +1255,43 @@ function placeFelt(felt, view, projected, webgl) {
 
 let zoomToken = 0;
 
+function zoomPanelCard(card, confirm) {
+  const from = card.getBoundingClientRect();
+  const face = card.querySelector("img");
+  if (!face || card.classList.contains("card-back")) {
+    openCardZoom("", from, { backs: 1, confirm });
+    return;
+  }
+  openCardZoom(face.getAttribute("src"), from, { suit: card.dataset.suit, rank: card.dataset.rank, confirm });
+}
+
+function confirmPanelCard(ctx, view, card) {
+  if (card.dataset.handBack != null && view?.prompt?.kind === "hand") {
+    ctx.onAction({ type: "respond", index: Number(card.dataset.handBack) });
+    return;
+  }
+  if (card.dataset.kitCard && view?.prompt?.kind === "kit") {
+    const id = card.dataset.kitCard;
+    if (ui.kitKeep.has(id)) ui.kitKeep.delete(id);
+    else if (ui.kitKeep.size < 2) ui.kitKeep.add(id);
+    mount(document.querySelector("#app"), ctx);
+    return;
+  }
+  if (card.dataset.take != null && ui.picker) {
+    const pick = ui.picker;
+    const index = card.dataset.handIndex;
+    ui.picker = null;
+    ui.selected = null;
+    ctx.onAction({ type: "play", cardId: pick.cardId, targetId: pick.targetId, take: card.dataset.take, index: index == null ? undefined : Number(index) });
+    return;
+  }
+  if (card.hasAttribute("data-store-card") || card.hasAttribute("data-pick-card")) {
+    ctx.onAction({ type: "respond", cardId: card.dataset.cardId });
+  }
+}
+
 function openCardZoom(src, from, extra = {}) {
-  if (!src || !from) return;
+  if (!from || (!src && !extra.backs)) return;
   const token = ++zoomToken;
   const show = (url) => {
     if (token === zoomToken) paintCardZoom(url, from, extra);
@@ -1308,26 +1318,33 @@ function paintCardZoom(src, from, extra) {
   const ctx = document.querySelector("#app")?.__ctx;
   const handId = extra.handId || "";
   const actions = handId && ctx ? spreadHandActions(ctx, handId) : "";
+  const choose = extra.confirm ? `<button type="button" class="bar-btn choice-btn" data-zoom-act="choose">선택</button>` : "";
   const backs = extra.backs ? Array.from({ length: Math.max(1, extra.backs) }, () => `<span class="zoom-back">BANG!</span>`).join("") : "";
   layer.hidden = false;
-  layer.innerHTML = `${backs ? `<div class="zoom-backs" style="left:${from.left}px;top:${from.top}px">${backs}<p>${esc(extra.caption || "")}</p></div>` : `<img class="zoom-fly" alt="" src="${esc(src)}" style="left:${from.left}px;top:${from.top}px;width:${from.width}px;height:${from.height}px" />`}${actions ? `<div class="zoom-actions">${actions.replaceAll("data-spread-act", "data-zoom-act")}</div>` : ""}`;
+  layer.innerHTML = `${backs ? `<div class="zoom-backs" style="left:${from.left}px;top:${from.top}px">${backs}<p>${esc(extra.caption || "")}</p></div>` : `<img class="zoom-fly" alt="" src="${esc(src)}" style="left:${from.left}px;top:${from.top}px;width:${from.width}px;height:${from.height}px" />`}<div class="zoom-actions">${choose}${actions ? actions.replaceAll("data-spread-act", "data-zoom-act") : ""}</div>`;
+  const wire = () => {
+    layer.querySelectorAll("[data-zoom-act]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const act = button.dataset.zoomAct;
+        const confirm = extra.confirm;
+        const cardId = extra.handId || "";
+        closeCardZoom();
+        if (act === "choose") confirm?.();
+        else if (ctx) runSpreadAction(ctx, act, cardId);
+      });
+    });
+  };
   if (backs) {
     const fan = layer.querySelector(".zoom-backs");
     requestAnimationFrame(() => fan?.classList.add("is-open"));
+    wire();
     return;
   }
   const img = layer.querySelector(".zoom-fly");
   img.dataset.from = JSON.stringify({ left: from.left, top: from.top, width: from.width, height: from.height });
   requestAnimationFrame(() => img.classList.add("is-open"));
-  layer.querySelectorAll("[data-zoom-act]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const act = button.dataset.zoomAct;
-      const cardId = extra.handId || "";
-      closeCardZoom();
-      if (ctx) runSpreadAction(ctx, act, cardId);
-    });
-  });
+  wire();
 }
 
 function closeCardZoom() {
