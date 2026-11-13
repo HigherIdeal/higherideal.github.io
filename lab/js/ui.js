@@ -227,6 +227,7 @@ function selectHtml(ctx) {
     <header class="topbar">
       <div class="brand-mini">BANG!</div>
       <p>${me?.role ? ROLES[me.role].ko : "역할 확인"} · 인물을 고르세요</p>
+      ${view.yourId === view.hostId ? `<button type="button" data-action="fresh">종료</button>` : ""}
        <button type="button" data-action="help">도움말</button>
     </header>
     <section class="choose">
@@ -253,6 +254,7 @@ function selectHtml(ctx) {
         </li>`).join("")}
       </ul>
     </section>
+    ${hostPassHtml()}
     ${toastHtml(ctx)}
     ${helpHtml()}
   </main>`;
